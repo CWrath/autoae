@@ -227,8 +227,9 @@ def stage_macos_update(archive_path, support_dir, expected_version=None):
             raise RuntimeError("The macOS app version doesn't match the published release version.")
 
         resources = app_dir / "Contents" / "Resources"
-        source_dir = resources / "app"
-        manifest_path = resources / "app-manifest.json"
+        bundled_resources = resources / "bundle"
+        source_dir = bundled_resources / "app"
+        manifest_path = bundled_resources / "app-manifest.json"
         if not source_dir.is_dir() or not manifest_path.is_file():
             raise RuntimeError("The macOS update archive is missing its app source manifest.")
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))

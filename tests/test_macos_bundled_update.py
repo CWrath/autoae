@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 
 from app_updater import stage_macos_update
-from macos.merge_universal_app import zip_app
+from macos.merge_universal_app import source_manifest, zip_app
 
 
 class MacOSBundledUpdateTests(unittest.TestCase):
@@ -26,7 +26,7 @@ class MacOSBundledUpdateTests(unittest.TestCase):
         }
         app = path.parent / "Auto AE.app"
         contents = app / "Contents"
-        resources = contents / "Resources"
+        resources = contents / "Resources" / "bundle"
         (contents / "MacOS").mkdir(parents=True)
         (resources / "app").mkdir(parents=True)
         (contents / "Info.plist").write_bytes(plistlib.dumps(info))
@@ -63,10 +63,11 @@ class MacOSBundledUpdateTests(unittest.TestCase):
 
             self.assertEqual(bundle.name, "Auto AE.app")
             self.assertEqual(
-                (bundle / "Contents" / "Resources" / "app" / "main.py").read_text(),
+                (bundle / "Contents" / "Resources" / "bundle" / "app" / "main.py").read_text(),
                 "print('updated')\n",
             )
             self.assertTrue((bundle / "Contents" / "MacOS" / "Auto AE").is_file())
+            self.assertEqual(source_manifest(bundle)["version"], "9.8.7")
 
     def test_rejects_version_mismatch(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -65,7 +65,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: main
 
       - name: Download native app builds
         uses: actions/download-artifact@v4
