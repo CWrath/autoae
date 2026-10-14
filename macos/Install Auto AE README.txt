@@ -1,9 +1,8 @@
 AUTO AE FOR macOS — INSTALLATION
 ================================
 
-This package is not signed or notarized by Apple. These steps remove the download
-quarantine flag from Auto AE only; they do not disable Gatekeeper or change macOS
-security settings for other apps.
+Official Auto AE releases are signed with the project's Developer ID certificate
+and notarized by Apple. These installation steps preserve macOS Gatekeeper checks.
 
 REQUIREMENTS
 ------------
@@ -31,11 +30,6 @@ INSTALL
 
     mkdir -p "$HOME/Applications"
     /usr/bin/ditto "$APP_SOURCE" "$APP_TARGET"
-
-    if /usr/bin/xattr -p com.apple.quarantine "$APP_TARGET" >/dev/null 2>&1; then
-      /usr/bin/xattr -dr com.apple.quarantine "$APP_TARGET"
-    fi
-
     /usr/bin/open "$APP_TARGET"
 
 FIRST LAUNCH
@@ -43,8 +37,9 @@ FIRST LAUNCH
 
 Auto AE starts directly with its bundled Python runtime and dependencies.
 
-If macOS still blocks the app, open System Settings > Privacy & Security, select
-Open Anyway for Auto AE, and confirm. Never disable Gatekeeper globally.
+If macOS blocks the app, first confirm that it came from the official Auto AE
+release. Then open System Settings > Privacy & Security and follow the prompt
+for Auto AE. Never disable Gatekeeper globally.
 
 Auto AE is installed at:
 

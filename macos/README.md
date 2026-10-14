@@ -17,9 +17,9 @@ includes `Install Auto AE README.txt` with copy-and-paste Terminal commands.
 ## Install the download
 
 Extract `AutoAE-macos.zip` and follow `Install Auto AE README.txt`. Its commands copy Auto AE
-to `~/Applications`, remove the download quarantine flag from Auto AE only, and open it. This
-does not disable Gatekeeper for other apps. Python, Tk, and Python dependencies are bundled;
-users do not need to install them separately.
+to `~/Applications` and open it without removing the download quarantine flag, so macOS
+Gatekeeper checks remain enabled. Python, Tk, and Python dependencies are bundled; users do not
+need to install them separately.
 
 ## What the Mac needs
 
@@ -34,7 +34,8 @@ users do not need to install them separately.
 
 Release downloads are signed with the project's Developer ID Application certificate and
 notarized by Apple. If macOS still blocks the app, confirm that the download came from the
-official Auto AE release before following any Gatekeeper override instructions.
+official Auto AE release, then follow the Auto AE-specific prompt in System Settings >
+Privacy & Security. Never disable Gatekeeper globally.
 
 ## Where things live on the Mac
 
@@ -68,6 +69,9 @@ uploads `AutoAE-macos.zip`. Configure these repository Actions secrets before ru
 `MACOS_SIGNING_IDENTITY` (the full `Developer ID Application: Name (TEAMID)` identity),
 `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`. Attach both platform assets
 before publishing. Keep the `.p12` and its password private; never commit them.
+
+Build both platform assets from the same tagged source revision. The Windows installer bundles
+all Python tools, and the macOS release workflow packages those same tools into the universal app.
 
 ## Files in this folder
 

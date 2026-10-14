@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.consolidate_media_tool import Tool, filename_match_key
+from tools.consolidate_media_tool import Tool, filename_match_key, sanitize_folder_name
 
 
 class ConsolidateMediaMatchingTests(unittest.TestCase):
@@ -45,6 +45,12 @@ class ConsolidateMediaMatchingTests(unittest.TestCase):
             filename_match_key("Scene_V2-0003.mov", True),
             "scene_v2-0003.mov",
         )
+
+    def test_sanitize_folder_name_handles_invalid_and_reserved_names(self):
+        self.assertEqual(sanitize_folder_name("Episode: 01/FINAL*"), "Episode_ 01_FINAL_")
+        self.assertEqual(sanitize_folder_name("CON"), "_CON")
+        self.assertEqual(sanitize_folder_name("..."), "Consolidated Media")
+        self.assertEqual(sanitize_folder_name("Show. "), "Show")
 
 
 if __name__ == "__main__":

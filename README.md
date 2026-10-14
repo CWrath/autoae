@@ -6,7 +6,8 @@ CustomTkinter. It includes media, editorial, storage, and project-setup tools.
 ## Features
 
 - **Media:** Browse and preview media, convert common image/audio/video formats,
-  generate proxies, and export PDF pages as PNG or JPEG.
+  generate proxies, consolidate media with cross-platform-safe destination names,
+  and export PDF pages as PNG or JPEG.
 - **Editorial:** Convert EDL/ALE/XML files to spreadsheets, turn subtitles into
   timeline markers, calculate timecodes, and sync Avid bins.
 - **Project setup:** Create project folder structures, organize watch folders,
@@ -35,7 +36,8 @@ build when packaging.
   Inno Setup 6 installed.
 - macOS: Python and its dependencies are bundled. Create a GitHub release draft, then run
   the **Build universal macOS release** workflow to build for Intel and Apple Silicon and
-  attach `AutoAE-macos.zip`.
+  attach `AutoAE-macos.zip`. Build both platform assets from the same version tag before
+  publishing the release.
 
 The in-app updater checks the latest stable GitHub release. Update releases
 must use a `vMAJOR.MINOR.PATCH` tag and include `AutoAE-Setup.exe` and
