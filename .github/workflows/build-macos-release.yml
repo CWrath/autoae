@@ -1,0 +1,175 @@
+name: Build universal macOS release
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing GitHub release tag to attach AutoAE-macos.zip to
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: macos-15-intel
+          - architecture: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
+
+      - name: Install universal Python with Tk
+        run: |
+          curl --fail --location --silent --show-error \
+            https://www.python.org/ftp/python/3.13.11/python-3.13.11-macos11.pkg \
+            --output "$RUNNER_TEMP/python.pkg"
+          sudo installer -pkg "$RUNNER_TEMP/python.pkg" -target /
+          /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 \
+            -c "import platform, tkinter; print(platform.machine(), tkinter.TkVersion)"
+
+      - name: Install app and build dependencies
+        run: |
+          PYTHON=/Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13
+          "$PYTHON" -m pip install --disable-pip-version-check \
+            -r requirements-build-macos.txt \
+            -r macos/requirements-macos.txt
+
+      - name: Build native app
+        run: /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 build_macos_autoae.py
+
+      - name: Archive native app
+        run: |
+          mkdir -p "$RUNNER_TEMP/native-app"
+          tar -czf "$RUNNER_TEMP/native-app/Auto AE ${{ matrix.architecture }}.tar.gz" \
+            -C dist "Auto AE.app"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-app-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/native-app/*.tar.gz
+          if-no-files-found: error
+          retention-days: 2
+
+  merge-and-attach:
+    needs: build-native
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
+
+      - name: Download native app builds
+        uses: actions/download-artifact@v4
+        with:
+          pattern: macos-app-*
+          path: ${{ runner.temp }}/native-apps
+          merge-multiple: true
+
+      - name: Extract and merge universal app
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          VERSION="${RELEASE_TAG#v}"
+          mkdir -p "$RUNNER_TEMP/x86_64" "$RUNNER_TEMP/arm64"
+          tar -xzf "$RUNNER_TEMP/native-apps/Auto AE x86_64.tar.gz" -C "$RUNNER_TEMP/x86_64"
+          tar -xzf "$RUNNER_TEMP/native-apps/Auto AE arm64.tar.gz" -C "$RUNNER_TEMP/arm64"
+          python3 macos/merge_universal_app.py \
+            --x86-app "$RUNNER_TEMP/x86_64/Auto AE.app" \
+            --arm-app "$RUNNER_TEMP/arm64/Auto AE.app" \
+            --output-app "$RUNNER_TEMP/universal/Auto AE.app" \
+            --output-zip dist/AutoAE-macos.zip \
+            --expected-version "$VERSION"
+
+      - name: Import Developer ID certificate
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          : "${MACOS_CERTIFICATE_P12:?Missing MACOS_CERTIFICATE_P12 secret}"
+          : "${MACOS_CERTIFICATE_PASSWORD:?Missing MACOS_CERTIFICATE_PASSWORD secret}"
+          : "${MACOS_SIGNING_IDENTITY:?Missing MACOS_SIGNING_IDENTITY secret}"
+          KEYCHAIN_PATH="$RUNNER_TEMP/autoae-signing.keychain-db"
+          CERTIFICATE_PATH="$RUNNER_TEMP/autoae-signing.p12"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "CERTIFICATE_PATH=$CERTIFICATE_PATH" >> "$GITHUB_ENV"
+          export CERTIFICATE_PATH
+          python3 -c 'import base64, os; encoded = "".join(os.environ["MACOS_CERTIFICATE_P12"].split()); open(os.environ["CERTIFICATE_PATH"], "wb").write(base64.b64decode(encoded, validate=True))'
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" \
+            | grep -F "$MACOS_SIGNING_IDENTITY"
+
+      - name: Sign universal app
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          APP_PATH="$RUNNER_TEMP/universal/Auto AE.app"
+          codesign --deep --force --options runtime --timestamp \
+            --sign "$MACOS_SIGNING_IDENTITY" \
+            --keychain "$KEYCHAIN_PATH" "$APP_PATH"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+      - name: Submit app for notarization
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          : "${APPLE_ID:?Missing APPLE_ID secret}"
+          : "${APPLE_APP_SPECIFIC_PASSWORD:?Missing APPLE_APP_SPECIFIC_PASSWORD secret}"
+          : "${APPLE_TEAM_ID:?Missing APPLE_TEAM_ID secret}"
+          xcrun notarytool submit dist/AutoAE-macos.zip \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+
+      - name: Staple notarization ticket and rebuild ZIP
+        run: |
+          set -euo pipefail
+          APP_PATH="$RUNNER_TEMP/universal/Auto AE.app"
+          xcrun stapler staple "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+          spctl --assess --type execute --verbose=2 "$APP_PATH"
+          export APP_PATH
+          python3 -c 'import os; from pathlib import Path; from macos.merge_universal_app import zip_app; zip_app(Path(os.environ["APP_PATH"]), Path("dist/AutoAE-macos.zip"), Path("macos/Install Auto AE README.txt"))'
+
+      - name: Remove signing credentials
+        if: always()
+        run: |
+          if [[ -n "${KEYCHAIN_PATH:-}" ]]; then
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+          if [[ -n "${CERTIFICATE_PATH:-}" ]]; then
+            rm -f "$CERTIFICATE_PATH"
+          fi
+
+      - name: Attach macOS app to the existing GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: gh release upload "$RELEASE_TAG" dist/AutoAE-macos.zip --repo "$GITHUB_REPOSITORY" --clobber

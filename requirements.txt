@@ -1,0 +1,20 @@
+# Python packages Auto AE needs on Windows:  pip install -r requirements.txt
+# (The Mac app installs its own list from macos/requirements-macos.txt.)
+
+customtkinter==5.2.2       # every window; the theme is built for this version
+Pillow>=10.0,<13           # icons and thumbnails
+opencv-python>=4.8,<6      # Media Browser, Proxy Generator
+pandas>=2.0,<4             # EDL/ALE/XML Converter
+openpyxl>=3.1,<4           # EDL/ALE/XML Converter's Excel export
+matplotlib>=3.8,<4         # Storage Monitor charts
+psutil>=5.9,<8             # Storage Monitor
+chardet>=5.0,<8            # Subtitle to Markers
+schedule>=1.2,<2           # Project Backup
+watchdog>=4.0,<7           # Watch Folder Sorter
+PyMuPDF>=1.24,<2             # PDF Pages to Images
+
+# Optional: the app runs without these, but these features need them
+pymediainfo>=6.0           # Media Browser's metadata panel
+pygame>=2.5                # Media Browser's audio playback
+keyring>=24                # Task Board: keeps your email password, Slack token and Microsoft sign-in in the system keychain
+pywin32>=306; sys_platform == "win32"    # drive names in Storage Monitor
