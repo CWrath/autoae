@@ -32,7 +32,9 @@ def is_macho(path):
 
 
 def source_manifest(app_path):
-    manifest_path = app_path / "Contents" / "Resources" / "app-manifest.json"
+    manifest_path = (
+        app_path / "Contents" / "Resources" / "bundle" / "app-manifest.json"
+    )
     if not manifest_path.is_file():
         raise ValueError("Missing bundled app manifest: {}".format(manifest_path))
     return json.loads(manifest_path.read_text(encoding="utf-8"))
