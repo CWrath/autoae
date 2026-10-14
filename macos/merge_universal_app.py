@@ -119,8 +119,9 @@ def merge_apps(x86_app, arm_app, output_app, expected_version=None):
             special_frameworks[relative] = (x86_binary, arm_binary)
 
     special_paths = set(special_frameworks)
+    special_entry_names = {relative.as_posix() for relative in special_paths}
     special_resource_links = {
-        Path("Contents") / "Resources" / relative.name
+        (Path("Contents") / "Resources" / relative.name).as_posix()
         for relative in special_paths
         if ((x86_app / "Contents" / "Resources" / relative.name).is_symlink()
             or (arm_app / "Contents" / "Resources" / relative.name).is_symlink())
@@ -128,16 +129,16 @@ def merge_apps(x86_app, arm_app, output_app, expected_version=None):
 
     for relative in x86_entries & arm_entries:
         if entry_kind(x86_app, relative) != entry_kind(arm_app, relative):
-            if relative not in special_paths:
+            if relative not in special_entry_names:
                 raise ValueError("The Intel and Apple Silicon app bundles disagree at {}.".format(relative))
         elif entry_kind(x86_app, relative) == "file":
             x86_macho = is_macho(x86_app / relative)
             arm_macho = is_macho(arm_app / relative)
-            if x86_macho != arm_macho and relative not in special_paths:
+            if x86_macho != arm_macho and relative not in special_entry_names:
                 raise ValueError("The Intel and Apple Silicon app entries disagree at {}.".format(relative))
     for relative in x86_links.keys() & arm_links.keys():
         if x86_links[relative] != arm_links[relative]:
-            if relative not in special_paths and relative not in special_resource_links:
+            if relative not in special_entry_names and relative not in special_resource_links:
                 raise ValueError("The Intel and Apple Silicon app bundles have conflicting links at {}.".format(relative))
 
     if output_app.exists():
