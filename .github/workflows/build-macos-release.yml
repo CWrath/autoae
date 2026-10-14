@@ -151,11 +151,27 @@ jobs:
           : "${APPLE_ID:?Missing APPLE_ID secret}"
           : "${APPLE_APP_SPECIFIC_PASSWORD:?Missing APPLE_APP_SPECIFIC_PASSWORD secret}"
           : "${APPLE_TEAM_ID:?Missing APPLE_TEAM_ID secret}"
+          NOTARY_RESULT="$RUNNER_TEMP/notary-result.json"
           xcrun notarytool submit dist/AutoAE-macos.zip \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_APP_SPECIFIC_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait
+            --wait \
+            --output-format json > "$NOTARY_RESULT"
+          cat "$NOTARY_RESULT"
+          NOTARY_STATUS="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["status"])' "$NOTARY_RESULT")"
+          if [[ "$NOTARY_STATUS" != "Accepted" ]]; then
+            SUBMISSION_ID="$(python3 -c 'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["id"])' "$NOTARY_RESULT")"
+            echo "Apple notarization ended with status: $NOTARY_STATUS" >&2
+            if ! xcrun notarytool log "$SUBMISSION_ID" \
+              --apple-id "$APPLE_ID" \
+              --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+              --team-id "$APPLE_TEAM_ID" \
+              --output-format json; then
+              echo "Unable to retrieve the detailed Apple notarization log." >&2
+            fi
+            exit 1
+          fi
 
       - name: Staple notarization ticket and rebuild ZIP
         run: |
