@@ -82,44 +82,116 @@ def merge_apps(x86_app, arm_app, output_app, expected_version=None):
 
     x86_entries, x86_links = bundle_entries(x86_app)
     arm_entries, arm_links = bundle_entries(arm_app)
-    if x86_entries != arm_entries or x86_links != arm_links:
-        raise ValueError("The Intel and Apple Silicon app bundles have different layouts.")
 
-    x86_binaries = {
-        path.relative_to(x86_app)
-        for path in x86_app.rglob("*")
-        if path.is_file() and not path.is_symlink() and is_macho(path)
+    def entry_kind(app_path, relative):
+        path = app_path / relative
+        if path.is_symlink():
+            return "symlink"
+        if path.is_dir():
+            return "directory"
+        return "file"
+
+    def resolved_binary(app_path, relative):
+        path = (app_path / relative).resolve(strict=True)
+        if os.path.commonpath((str(app_path.resolve()), str(path))) != str(app_path.resolve()):
+            raise ValueError("A native library resolves outside its app bundle: {}".format(relative))
+        if not path.is_file() or not is_macho(path):
+            raise ValueError("A native library link does not resolve to Mach-O code: {}".format(relative))
+        return path
+
+    special_frameworks = {}
+    x86_frameworks = x86_app / "Contents" / "Frameworks"
+    arm_frameworks = arm_app / "Contents" / "Frameworks"
+    for name in sorted({path.name for path in x86_frameworks.glob("*.dylib")}
+                       | {path.name for path in arm_frameworks.glob("*.dylib")}):
+        relative = Path("Contents") / "Frameworks" / name
+        x86_path = x86_app / relative
+        arm_path = arm_app / relative
+        if not (x86_path.exists() or x86_path.is_symlink()):
+            continue
+        if not (arm_path.exists() or arm_path.is_symlink()):
+            continue
+        x86_binary = resolved_binary(x86_app, relative)
+        arm_binary = resolved_binary(arm_app, relative)
+        x86_relative = x86_binary.relative_to(x86_app.resolve())
+        arm_relative = arm_binary.relative_to(arm_app.resolve())
+        if x86_relative != arm_relative:
+            special_frameworks[relative] = (x86_binary, arm_binary)
+
+    special_paths = set(special_frameworks)
+    special_resource_links = {
+        Path("Contents") / "Resources" / relative.name
+        for relative in special_paths
+        if ((x86_app / "Contents" / "Resources" / relative.name).is_symlink()
+            or (arm_app / "Contents" / "Resources" / relative.name).is_symlink())
     }
-    arm_binaries = {
-        path.relative_to(arm_app)
-        for path in arm_app.rglob("*")
-        if path.is_file() and not path.is_symlink() and is_macho(path)
-    }
-    if not x86_binaries or x86_binaries != arm_binaries:
-        missing_arm = sorted(str(path) for path in x86_binaries - arm_binaries)
-        missing_x86 = sorted(str(path) for path in arm_binaries - x86_binaries)
-        raise ValueError(
-            "Native binary sets differ between builds (Intel-only: {}; Apple-Silicon-only: {}).".format(
-                ", ".join(missing_arm) or "none",
-                ", ".join(missing_x86) or "none",
-            )
-        )
+
+    for relative in x86_entries & arm_entries:
+        if entry_kind(x86_app, relative) != entry_kind(arm_app, relative):
+            if relative not in special_paths:
+                raise ValueError("The Intel and Apple Silicon app bundles disagree at {}.".format(relative))
+        elif entry_kind(x86_app, relative) == "file":
+            x86_macho = is_macho(x86_app / relative)
+            arm_macho = is_macho(arm_app / relative)
+            if x86_macho != arm_macho and relative not in special_paths:
+                raise ValueError("The Intel and Apple Silicon app entries disagree at {}.".format(relative))
+    for relative in x86_links.keys() & arm_links.keys():
+        if x86_links[relative] != arm_links[relative]:
+            if relative not in special_paths and relative not in special_resource_links:
+                raise ValueError("The Intel and Apple Silicon app bundles have conflicting links at {}.".format(relative))
 
     if output_app.exists():
         shutil.rmtree(output_app)
     output_app.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(arm_app, output_app, symlinks=True)
+
+    for relative in sorted(x86_entries - arm_entries, key=lambda item: (len(Path(item).parts), item)):
+        source = x86_app / relative
+        target = output_app / relative
+        if source.is_symlink():
+            if target.exists() or target.is_symlink():
+                raise ValueError("Cannot combine architecture-specific app entries at {}.".format(relative))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.symlink(os.readlink(source), target)
+        elif source.is_dir():
+            if target.exists() and not target.is_dir():
+                raise ValueError("Cannot combine architecture-specific app entries at {}.".format(relative))
+            target.mkdir(parents=True, exist_ok=True)
+        else:
+            if target.exists() or target.is_symlink():
+                raise ValueError("Cannot combine architecture-specific app entries at {}.".format(relative))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+
+    def native_binaries(app_path):
+        return {
+            path.relative_to(app_path)
+            for path in app_path.rglob("*")
+            if path.is_file() and not path.is_symlink()
+            and path.relative_to(app_path) not in special_paths and is_macho(path)
+        }
+
+    x86_binaries = native_binaries(x86_app)
+    arm_binaries = native_binaries(arm_app)
+    if not x86_binaries or not arm_binaries:
+        raise ValueError("Both native app builds must contain Mach-O binaries.")
+
+    def require_architecture(binary, relative, architecture):
+        result = subprocess.run(
+            [lipo, "-archs", str(binary)],
+            check=True, capture_output=True, text=True,
+        )
+        if architecture not in result.stdout.split():
+            raise ValueError("{} is missing {}.".format(relative, architecture))
+
     for relative in sorted(x86_binaries):
+        require_architecture(x86_app / relative, relative, "x86_64")
+    for relative in sorted(arm_binaries):
+        require_architecture(arm_app / relative, relative, "arm64")
+
+    for relative in sorted(x86_binaries & arm_binaries):
         x86_binary = x86_app / relative
         arm_binary = arm_app / relative
-        for binary, architecture in ((x86_binary, "x86_64"), (arm_binary, "arm64")):
-            result = subprocess.run(
-                [lipo, "-archs", str(binary)],
-                check=True, capture_output=True, text=True,
-            )
-            if architecture not in result.stdout.split():
-                raise ValueError("{} is missing {}.".format(relative, architecture))
-
         output = output_app / relative
         temporary = output.with_name(output.name + ".universal")
         subprocess.run(
@@ -135,6 +207,31 @@ def merge_apps(x86_app, arm_app, output_app, expected_version=None):
         architectures = set(result.stdout.split())
         if not {"x86_64", "arm64"}.issubset(architectures):
             raise ValueError("{} is not universal.".format(relative))
+
+    for relative, (x86_binary, arm_binary) in sorted(special_frameworks.items()):
+        require_architecture(x86_binary, relative, "x86_64")
+        require_architecture(arm_binary, relative, "arm64")
+        output = output_app / relative
+        if output.is_symlink():
+            output.unlink()
+        temporary = output.with_name(output.name + ".universal")
+        subprocess.run(
+            [lipo, "-create", str(x86_binary), str(arm_binary), "-output", str(temporary)],
+            check=True,
+        )
+        temporary.chmod(stat.S_IMODE(x86_binary.stat().st_mode))
+        temporary.replace(output)
+        result = subprocess.run(
+            [lipo, "-archs", str(output)],
+            check=True, capture_output=True, text=True,
+        )
+        if not {"x86_64", "arm64"}.issubset(result.stdout.split()):
+            raise ValueError("{} is not a universal framework library.".format(relative))
+
+        resource_link = output_app / "Contents" / "Resources" / relative.name
+        if resource_link.is_symlink():
+            resource_link.unlink()
+            os.symlink("../Frameworks/{}".format(relative.name), resource_link)
 
     return output_app
 
