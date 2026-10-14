@@ -80,6 +80,14 @@ def sanitize_folder_name(name):
     return sanitized[:255]
 
 
+def filename_match_key(filename, ignore_resolve_suffix=False):
+    """Normalize a filename for matching without changing the actual file name."""
+    stem, extension = os.path.splitext(filename)
+    if ignore_resolve_suffix:
+        stem = re.sub(r"_V1-\d+$", "", stem, flags=re.IGNORECASE)
+    return (stem + extension).casefold()
+
+
 class Tool(BaseTool):
     def __init__(self):
         super().__init__()
@@ -128,6 +136,20 @@ class Tool(BaseTool):
             checkbox_height=18,
         )
         self.group_by_source_checkbox.grid(row=3, column=0, sticky="w", padx=(132, 0), pady=(14, 0))
+
+        self.ignore_resolve_suffix_var = tk.BooleanVar(value=False)
+        self.ignore_resolve_suffix_checkbox = ctk.CTkCheckBox(
+            sources.body,
+            text="Ignore Resolve suffix (_V1-0000) when matching filenames",
+            variable=self.ignore_resolve_suffix_var,
+            onvalue=True,
+            offvalue=False,
+            checkbox_width=18,
+            checkbox_height=18,
+        )
+        self.ignore_resolve_suffix_checkbox.grid(
+            row=4, column=0, sticky="w", padx=(132, 0), pady=(8, 0)
+        )
 
         # --- Progress + log --------------------------------------------------
         progress = theme.Card(page, title="Progress")
@@ -203,6 +225,7 @@ class Tool(BaseTool):
         source_folder = self.source_entry.get().strip()
         destination_root = self.destination_entry.get().strip()
         group_by_source = bool(self.group_by_source_var.get())
+        ignore_resolve_suffix = bool(self.ignore_resolve_suffix_var.get())
 
         if not edl_files or not source_folder or not destination_root:
             messagebox.showerror("Error", "Please fill in all fields")
@@ -217,15 +240,20 @@ class Tool(BaseTool):
         self.consolidate_button.configure(state="disabled")
         self.processing_thread = threading.Thread(
             target=self._run_consolidation_worker,
-            args=(source_folder, edl_files, destination_root, group_by_source),
+            args=(source_folder, edl_files, destination_root, group_by_source,
+                  ignore_resolve_suffix),
             daemon=True,
         )
         self.processing_thread.start()
 
-    def _run_consolidation_worker(self, source_folder, edl_files, destination_root, group_by_source):
+    def _run_consolidation_worker(
+        self, source_folder, edl_files, destination_root, group_by_source,
+        ignore_resolve_suffix=False,
+    ):
         try:
             result = self._consolidate(
-                source_folder, edl_files, destination_root, group_by_source
+                source_folder, edl_files, destination_root, group_by_source,
+                ignore_resolve_suffix,
             )
             status = "Stopped" if self.processing_state == "stopped" else "Complete"
             failed = result.get("failed", [])
@@ -274,7 +302,10 @@ class Tool(BaseTool):
             self._ui_call(self.stop_button.configure, state="disabled")
             self._ui_call(self.consolidate_button.configure, state="normal")
 
-    def _consolidate(self, source_folder, edl_files, destination_root, group_by_source):
+    def _consolidate(
+        self, source_folder, edl_files, destination_root, group_by_source,
+        ignore_resolve_suffix=False,
+    ):
         self._current_step = (None, None)
         if not os.path.isdir(source_folder):
             raise FileNotFoundError(f"Source folder not found: {source_folder}")
@@ -309,7 +340,9 @@ class Tool(BaseTool):
         )
 
         self._current_step = ("read the source folder", source_folder)
-        source_index = self.index_source_files(source_folder)
+        source_index = self.index_source_files(
+            source_folder, ignore_resolve_suffix=ignore_resolve_suffix
+        )
         self._current_step = (None, None)
         missing_files = []
         failed_files = []
@@ -323,7 +356,9 @@ class Tool(BaseTool):
                 self.progress_label.configure,
                 text=f"Processing {index}/{len(source_names)}: {filename}",
             )
-            matching_file = source_index.get(filename.casefold())
+            matching_file = source_index.get(
+                filename_match_key(filename, ignore_resolve_suffix)
+            )
             if not matching_file:
                 missing_files.append(filename)
                 self._ui_call(self.results_listbox.insert, tk.END, f"Missing: {filename}")
@@ -680,16 +715,20 @@ class Tool(BaseTool):
                 )
         return sorted((name for name in source_names if name), key=str.casefold)
 
-    def index_source_files(self, source_folder):
+    def index_source_files(self, source_folder, ignore_resolve_suffix=False):
         """Index files by basename and extensionless stem for fast matching."""
         indexed_files = {}
         for root, _, files in os.walk(source_folder):
             for file_name in sorted(files):
                 path = os.path.join(root, file_name)
-                indexed_files.setdefault(file_name.casefold(), path)
+                indexed_files.setdefault(
+                    filename_match_key(file_name, ignore_resolve_suffix), path
+                )
                 stem, _ = os.path.splitext(file_name)
                 if stem:
-                    indexed_files.setdefault(stem.casefold(), path)
+                    indexed_files.setdefault(
+                        filename_match_key(stem, ignore_resolve_suffix), path
+                    )
         return indexed_files
     
     def clear_consolidation(self):
@@ -704,9 +743,11 @@ class Tool(BaseTool):
         self.pause_button.configure(state="disabled", text="Pause")
         self.stop_button.configure(state="disabled")
     
-    def find_matching_file(self, source_folder, filename):
+    def find_matching_file(self, source_folder, filename, ignore_resolve_suffix=False):
         """Find a file in source folder that matches the filename exactly (case-insensitive)"""
-        return self.index_source_files(source_folder).get(filename.casefold())
+        return self.index_source_files(
+            source_folder, ignore_resolve_suffix=ignore_resolve_suffix
+        ).get(filename_match_key(filename, ignore_resolve_suffix))
     
     def extract_edl_title(self, edl_file):
         """Extract the TITLE from an EDL file (returns None if not found)"""
