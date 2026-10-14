@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_tag }}
+          ref: main
 
       - name: Install universal Python with Tk
         run: |
@@ -35,6 +35,14 @@ jobs:
           sudo installer -pkg "$RUNNER_TEMP/python.pkg" -target /
           /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 \
             -c "import platform, tkinter; print(platform.machine(), tkinter.TkVersion)"
+
+      - name: Verify release version
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          /Library/Frameworks/Python.framework/Versions/3.13/bin/python3.13 -c \
+            'import os; from app_version import APP_VERSION; expected = os.environ["RELEASE_TAG"].removeprefix("v"); assert APP_VERSION == expected, f"app_version.py has {APP_VERSION}, expected {expected}"'
 
       - name: Install app and build dependencies
         run: |
