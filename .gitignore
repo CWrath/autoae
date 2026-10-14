@@ -1,0 +1,41 @@
+# Local settings and app state
+autoae_settings.json
+batch_renamer_tokens.json
+setup_kit_settings.json
+storage_monitor_selected_drives.json
+storage_monitor_window_size.json
+
+# Build output and bundled runtime dependencies
+build/
+build-windows/
+dist/
+dist-windows/
+dist-windows-installer/
+dist-windows-release/
+ConsolidateMedia.app/
+ffmpeg-7.1.1-essentials_build/
+ffmpeg-mac/
+__pycache__/
+*.py[cod]
+
+# Local environments and IDE settings
+.venv/
+venv/
+.idea/
+.claude/
+
+# Archived, legacy, and unrelated project copies
+AutoAEV2/
+graveyard/
+tools_old/
+_backup_before_*/
+Include/
+Lib/
+Scripts/
+
+# Separate legacy Consolidate Media utility
+build_macos_app.py
+package_macos_release.py
+consolidate_media_macos.command
+consolidate_media_macos.py
+consolidate_media_macos.pyw

@@ -1,0 +1,21 @@
+# Python packages for Auto AE on macOS. Auto AE installs these into its own
+# environment the first time it opens, and again whenever this file changes.
+customtkinter==5.2.2
+darkdetect>=0.8
+pillow>=10.0,<13
+numpy>=1.26,<3
+pandas>=2.0,<4
+openpyxl>=3.1,<4
+matplotlib>=3.8,<4
+opencv-python-headless>=4.8,<6
+psutil>=5.9,<8
+schedule>=1.2,<2
+chardet>=5.0,<8
+
+# --- optional ---
+# Installed one at a time. If one can't be installed, only the tool that uses it is affected.
+watchdog>=4.0,<7      # Watch Folder Sorter
+pymediainfo>=6.0      # Media Browser metadata panel
+pygame>=2.5           # Media Browser audio playback
+keyring>=24           # Task Board passwords + Microsoft sign-in in the macOS Keychain
+PyMuPDF>=1.24,<2      # PDF Pages to Images

@@ -1,0 +1,138 @@
+# What do AE's need most when setting up for a new project?
+    # Organization - Folders Creation
+
+    # Applications - Versions of Avid to Install or other common installers an ae might need
+
+    # Archival Renamer and Log - A better mass renamer of files
+        # Removes Spaces and illegal characters from name
+        # Limits the length of the clip name to 100 characters
+
+    # Playback and read any file type
+        # What kind of file is this? A fancy media info
+        # What Color space is this? What Lut goes with it?
+
+    # Consolidate Media from CSV
+
+    # Read and Reformat EDLs
+
+    # Subtitle to Markers - Done
+
+    # Check and Verify QC System
+
+    # Timecode Calculator
+    
+    # Guides
+        # Link to Notion Docs
+        
+    # Rip a Video Based on a URL
+
+More Additions
+
+# Tools for Editors
+    # Sequence Analyzer
+    ## Parses XML/AAF/EDL to show stats: runtime, # of cuts, media usage per reel, etc.
+
+# Scene Detection Tool
+    ## Detects shot changes in flattened reference exports.
+
+# Offline-to-Online Conform Helper
+    ## Matches offline media to online based on timecode or reel metadata.
+
+# Proxy Generator
+    ## Creates batch proxies with naming templates and folder structure options.
+
+# Subclip Organizer
+    ## Extracts and organizes subclips from timelines.
+
+#Shortcut Mapper
+##Allows users to convert/export shortcut layouts between Avid, Premiere, and Resolve.
+
+#Marker Import/Export Tool
+##Move timeline markers to/from CSV, EDL, XML, and NLE-specific formats.
+
+#Timeline Snapshot Tool
+##Creates a visual map or PDF with keyframe thumbnails and markers.
+
+#Tools for Colorists
+##CDL Translator / LUT Converter
+###Converts between CDL, .cube, and printer light adjustments.
+
+#Shot Matching Preview
+##Compares color grade across selected shots for consistency.
+
+#Still Grabber with Note Export
+##Exports Resolve stills (gallery images) with notes for documentation or client review.
+
+#Timeline Marker Exporter
+##Outputs Resolve timeline markers with shot notes and timecodes.
+
+#Resolve Project Backup Manager
+##Automates backup of .drp files with version control and timestamped folders.
+
+#Render Log Analyzer
+##Parses render logs for failed clips, durations, and render times.
+
+#Tools for VFX Artists
+##Plate Organizer
+###Sorts VFX plates by shot/version/date and generates thumbnails.
+
+#Frame Range Extractor
+##Parses EDL/XML/AAF and extracts in/out + handles per shot.
+
+#Slate Remover / Re-slapper
+##Crops/removes head slates or generates digital slates using metadata.
+
+#Aspect Ratio Overlay Tool
+##Adds customizable overlays (2.39, 16:9, 1.85, etc.) on top of video.
+
+#EXR Sequence Verifier
+##Checks for dropped frames, resolution mismatches, missing passes in .exr sequences.
+
+#Light & Exposure Analyzer
+##Highlights exposure issues across plates (blowouts, underexposure, color clipping).
+
+#Alpha Channel Inspector
+##View and analyze embedded alpha channels in video sequences.
+
+#General-Purpose Tools
+##Watch Folder Automation
+###Runs batch actions (rename, transcode, tag) when new files appear in folders.
+
+#Metadata Validator
+
+#Render Queue Manager
+##Interfaces with ffmpeg, Adobe Media Encoder, or DaVinci Resolve to queue renders.
+
+#File Comparison Tool
+##Compares timelines or folders to find differences in file versions, durations, etc.
+
+#Quick Notetaker
+##Lets users take timestamped notes linked to media or sequences.
+
+#Batch Renamer with Templates
+##Custom naming rules for media based on metadata, date, scene, etc.
+
+#Burn-in Generator
+##Adds frame numbers, watermarks, and customizable text overlays.
+
+#Multicam Audio Sync Tool
+##Syncs multiple camera angles and audio via waveform or timecode.
+
+#Pipeline / Integration Tools
+##ShotGrid / Frame.io / ftrack Sync Tool
+###Syncs notes, shots, and versions with popular production tracking platforms.
+
+#Audio Conformer
+##Converts audio durations/sample rates for framerate changes (23.976 ↔ 25fps).
+
+#Sync Map Generator
+##Analyzes audio and video files to auto-generate sync maps (DIT-friendly).
+
+# Media Delivery Packager
+## Preps and packages media for delivery with checksums, slates, and folder structure.
+
+# Media Analyzer + Report Generator
+## Scans file types, frame rates, durations, resolutions, and generates PDF/CSV reports.
+
+# Timeline Rebuilder
+## Reconstructs timeline structure from exported metadata (e.g., from EDL to Resolve, etc.).
