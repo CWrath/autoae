@@ -118,6 +118,8 @@ def build_app():
         "--osx-bundle-identifier", BUNDLE_ID,
         "--hidden-import", "tkinter",
         "--hidden-import", "_tkinter",
+        "--hidden-import", "filecmp",
+        "--hidden-import", "imaplib",
         "--add-data", "{}:bundle".format(bundle_resources),
     ]
     for package in COLLECT_PACKAGES:
