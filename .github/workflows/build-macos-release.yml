@@ -183,8 +183,28 @@ jobs:
         run: |
           set -euo pipefail
           APP_PATH="$RUNNER_TEMP/universal/Auto AE.app"
-          xcrun stapler staple "$APP_PATH"
-          xcrun stapler validate "$APP_PATH"
+          for attempt in 1 2 3; do
+            if xcrun stapler staple "$APP_PATH"; then
+              break
+            fi
+            if [[ "$attempt" -eq 3 ]]; then
+              echo "Could not staple the notarization ticket after 3 attempts." >&2
+              exit 1
+            fi
+            echo "Stapling failed; retrying in $((attempt * 10)) seconds." >&2
+            sleep "$((attempt * 10))"
+          done
+          for attempt in 1 2 3; do
+            if xcrun stapler validate "$APP_PATH"; then
+              break
+            fi
+            if [[ "$attempt" -eq 3 ]]; then
+              echo "Could not validate the stapled ticket after 3 attempts." >&2
+              exit 1
+            fi
+            echo "Staple validation failed; retrying in $((attempt * 10)) seconds." >&2
+            sleep "$((attempt * 10))"
+          done
           spctl --assess --type execute --verbose=2 "$APP_PATH"
           export APP_PATH
           python3 -c 'import os; from pathlib import Path; from macos.merge_universal_app import zip_app; zip_app(Path(os.environ["APP_PATH"]), Path("dist/AutoAE-macos.zip"), Path("macos/Install Auto AE README.txt"))'
