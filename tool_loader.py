@@ -4,7 +4,7 @@ import sys
 
 def load_tools():
     """Load all tool modules from the tools directory"""
-    app_root = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    app_root = os.path.dirname(os.path.abspath(__file__))
     tool_dir = os.path.join(app_root, "tools")
     tool_instances = []
 
