@@ -82,6 +82,10 @@ jobs:
         with:
           ref: ${{ inputs.release_tag }}
 
+      - name: Install NASM for Intel FFmpeg build
+        if: matrix.architecture == 'x86_64'
+        run: brew install nasm
+
       - name: Build LGPL FFmpeg for this architecture
         run: |
           set -euo pipefail
