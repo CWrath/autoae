@@ -36,9 +36,9 @@ build when packaging.
   Inno Setup 6 installed.
 - macOS: Python and its dependencies are bundled. Create a GitHub release draft, then run
   the **Build universal macOS release** workflow to build for Intel and Apple Silicon and
-  attach `AutoAE-macos.zip`. Build both platform assets from the same version tag before
-  publishing the release.
+  attach `AutoAE-macos.zip` (in-app updates) and `AutoAE-macos.dmg` (drag-to-Applications
+  installer). Build all platform assets from the same version tag before publishing.
 
 The in-app updater checks the latest stable GitHub release. Update releases
-must use a `vMAJOR.MINOR.PATCH` tag and include `AutoAE-Setup.exe` and
-`AutoAE-macos.zip`.
+must use a `vMAJOR.MINOR.PATCH` tag and include `AutoAE-Setup.exe`,
+`AutoAE-macos.zip`, and `AutoAE-macos.dmg`.

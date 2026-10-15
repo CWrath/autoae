@@ -4,6 +4,7 @@ import os
 import plistlib
 import re
 import shutil
+import ssl
 import stat
 import subprocess
 import sys
@@ -13,6 +14,8 @@ import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path, PurePosixPath
+
+import certifi
 
 from app_version import APP_VERSION
 
@@ -34,6 +37,12 @@ def _version_tuple(version):
     return tuple(int(part) for part in match.groups())
 
 
+def _open_url(request, timeout):
+    """Use a bundled CA store instead of relying on the frozen Python's system paths."""
+    context = ssl.create_default_context(cafile=certifi.where())
+    return urllib.request.urlopen(request, timeout=timeout, context=context)
+
+
 def check_for_update(current_version=APP_VERSION, system=None, opener=None):
     """Return the latest compatible release, or None when already up to date."""
     system = system or sys.platform
@@ -50,7 +59,7 @@ def check_for_update(current_version=APP_VERSION, system=None, opener=None):
         },
     )
     try:
-        with (opener or urllib.request.urlopen)(request, timeout=30) as response:
+        with (opener or _open_url)(request, timeout=30) as response:
             release = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         if exc.code == 404:
@@ -115,7 +124,7 @@ def download_release_asset(release, progress_callback=None, opener=None):
     target = folder / expected_name
     received = 0
     try:
-        with (opener or urllib.request.urlopen)(request, timeout=60) as response, open(target, "wb") as output:
+        with (opener or _open_url)(request, timeout=60) as response, open(target, "wb") as output:
             while True:
                 block = response.read(1024 * 1024)
                 if not block:

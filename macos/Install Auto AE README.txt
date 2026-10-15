@@ -14,28 +14,17 @@ is not needed to set up Python dependencies on first launch.
 INSTALL
 -------
 
-1. Extract AutoAE-macos.zip in Finder.
-2. Open Terminal. Type "cd " (including the trailing space), drag the extracted
-   folder from Finder into Terminal, then press Return. This sets the current
-   directory to the folder containing "Auto AE.app".
-3. Copy and paste the commands below into Terminal, then press Return:
+1. Open AutoAE-macos.dmg (skip this step if you are reading this from the open disk image).
+2. Drag Auto AE onto the Applications shortcut in the window.
+3. Eject the Auto AE disk image, then open Auto AE from Applications.
 
-    APP_SOURCE="$PWD/Auto AE.app"
-    APP_TARGET="$HOME/Applications/Auto AE.app"
-
-    if [ ! -d "$APP_SOURCE" ]; then
-      echo 'Auto AE.app was not found. Run these commands from the extracted folder.' >&2
-      exit 1
-    fi
-
-    mkdir -p "$HOME/Applications"
-    /usr/bin/ditto "$APP_SOURCE" "$APP_TARGET"
-    /usr/bin/open "$APP_TARGET"
+No Terminal commands, Python, or Homebrew are required to install or run Auto AE.
 
 FIRST LAUNCH
 ------------
 
-Auto AE starts directly with its bundled Python runtime and dependencies.
+Auto AE starts directly with its bundled Python runtime and dependencies. An
+internet connection is needed for the first update check and online features.
 
 If macOS blocks the app, first confirm that it came from the official Auto AE
 release. Then open System Settings > Privacy & Security and follow the prompt

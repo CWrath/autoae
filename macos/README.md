@@ -11,15 +11,18 @@ python3 build_macos_autoae.py
 ```
 
 The native build makes `dist/Auto AE.app`. The release workflow merges Intel and Apple
-Silicon builds and attaches `AutoAE-macos.zip` to the specified GitHub release. The ZIP
-includes `Install Auto AE README.txt` with copy-and-paste Terminal commands.
+Silicon builds and attaches `AutoAE-macos.zip` and `AutoAE-macos.dmg` to the specified
+GitHub release. The ZIP is used for in-app updates; the DMG is the graphical installer for
+new installations.
 
 ## Install the download
 
-Extract `AutoAE-macos.zip` and follow `Install Auto AE README.txt`. Its commands copy Auto AE
-to `~/Applications` and open it without removing the download quarantine flag, so macOS
-Gatekeeper checks remain enabled. Python, Tk, and Python dependencies are bundled; users do not
-need to install them separately.
+Open `AutoAE-macos.dmg`, drag Auto AE onto the Applications shortcut, eject the disk image,
+and launch Auto AE from Applications. No Terminal commands or separate Python installation
+are needed. The app and DMG are signed and notarized, and Gatekeeper stays enabled.
+
+The ZIP is also available for manual installation: extract it in Finder, then drag `Auto AE.app`
+to Applications.
 
 ## What the Mac needs
 
@@ -55,7 +58,8 @@ and folder templates you edited are never overwritten.
 ## Checking for updates
 
 Use **Check for Updates** in the app's bottom bar. Auto AE checks the latest stable release in
-`CWrath/autoae` and asks before downloading or installing it. Windows opens the release installer; macOS replaces the app bundle after it closes, then reopens
+`CWrath/autoae` and asks before downloading or installing it. Windows opens the release
+installer; macOS downloads the app ZIP, replaces the app bundle after it closes, then reopens
 it. Your Application Support settings are kept. Users upgrading from an older release must
 manually install v1.0.5 once; later updates can be installed in the app.
 
@@ -63,8 +67,8 @@ To publish an update, set `APP_VERSION` in `app_version.py`, build the Windows i
 `build_windows_exe.py`, and create a GitHub release draft in `CWrath/autoae` with the matching
 `vMAJOR.MINOR.PATCH` tag. Attach `AutoAE-Setup.exe`, then run the **Build universal macOS release**
 workflow with that tag. The workflow builds on Intel and Apple Silicon runners, merges the native
-binaries, signs the merged app, submits it for Apple notarization, staples the ticket, and
-uploads `AutoAE-macos.zip`. Configure these repository Actions secrets before running it:
+binaries, signs and notarizes the app and DMG, staples the tickets, and uploads both macOS
+assets. Configure these repository Actions secrets before running it:
 `MACOS_CERTIFICATE_P12` (base64-encoded `.p12`), `MACOS_CERTIFICATE_PASSWORD`,
 `MACOS_SIGNING_IDENTITY` (the full `Developer ID Application: Name (TEAMID)` identity),
 `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`. Attach both platform assets
@@ -80,6 +84,7 @@ all Python tools, and the macOS release workflow packages those same tools into 
 | `frozen_entrypoint.py` | Starts the bundled Python runtime and app bootstrap. |
 | `bootstrap.py` | Copies app source to Application Support, starts `main.py`, and explains startup errors. |
 | `requirements-macos.txt` | Dependencies bundled into the Mac app. Optional packages enable their associated tools. |
+| `Install Auto AE README.txt` | Finder-only installation steps for the DMG and ZIP. |
 | `AppIcon.icns` | The app icon. |
 
 The app uses its bundled Python runtime and does not depend on Python installed on the Mac.

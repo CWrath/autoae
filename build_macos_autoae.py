@@ -38,7 +38,7 @@ APP_GLOBS = [
 SEED_DIRS = ("foldertemplates",)
 EXECUTABLE_DIRS = ("ffmpeg-mac",)
 COLLECT_PACKAGES = (
-    "customtkinter", "darkdetect", "PIL", "numpy", "pandas", "openpyxl",
+    "certifi", "customtkinter", "darkdetect", "PIL", "numpy", "pandas", "openpyxl",
     "matplotlib", "cv2", "psutil", "schedule", "chardet", "watchdog",
     "pymediainfo", "pygame", "keyring", "pymupdf", "fitz",
 )

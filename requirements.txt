@@ -2,6 +2,7 @@
 # (The Mac app installs its own list from macos/requirements-macos.txt.)
 
 customtkinter==5.2.2       # every window; the theme is built for this version
+certifi>=2024.2.2,<2027    # trusted CA certificates for HTTPS update checks
 Pillow>=10.0,<13           # icons and thumbnails
 opencv-python>=4.8,<6      # Media Browser, Proxy Generator
 pandas>=2.0,<4             # EDL/ALE/XML Converter
