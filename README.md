@@ -27,8 +27,9 @@ python -m pip install -r requirements.txt
 python main.py
 ```
 
-Some tools also use FFmpeg. Install it separately or use the bundled Windows
-build when packaging.
+Some media tools use FFmpeg. Windows packages include it; on macOS, use the
+**Install FFmpeg** button in Auto AE when prompted. The optional download needs
+internet access and installs only inside Auto AE's user support folder.
 
 ## Build releases
 
@@ -36,9 +37,11 @@ build when packaging.
   Inno Setup 6 installed.
 - macOS: Python and its dependencies are bundled. Create a GitHub release draft, then run
   the **Build universal macOS release** workflow to build for Intel and Apple Silicon and
-  attach `AutoAE-macos.zip` (in-app updates) and `AutoAE-macos.dmg` (drag-to-Applications
-  installer). Build all platform assets from the same version tag before publishing.
+  attach `AutoAE-macos.zip` (in-app updates), `AutoAE-macos.dmg` (drag-to-Applications
+  installer), and the signed universal FFmpeg download plus its corresponding source
+  archive. Build all platform assets from the same version tag before publishing.
 
 The in-app updater checks the latest stable GitHub release. Update releases
 must use a `vMAJOR.MINOR.PATCH` tag and include `AutoAE-Setup.exe`,
-`AutoAE-macos.zip`, and `AutoAE-macos.dmg`.
+`AutoAE-macos.zip`, `AutoAE-macos.dmg`, `AutoAE-ffmpeg-macos.zip`, and the
+matching `AutoAE-ffmpeg-source-9.0.2.tar.xz` source archive.

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing GitHub release tag to attach AutoAE-macos.zip to
+        description: Existing release tag to attach macOS app and FFmpeg assets to
         required: true
         type: string
 
@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ inputs.release_tag }}
 
       - name: Install universal Python with Tk
         run: |
@@ -67,19 +67,56 @@ jobs:
           if-no-files-found: error
           retention-days: 2
 
+  build-ffmpeg:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: x86_64
+            runner: macos-15-intel
+          - architecture: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag }}
+
+      - name: Build LGPL FFmpeg for this architecture
+        run: |
+          set -euo pipefail
+          OUTPUT="$RUNNER_TEMP/ffmpeg-build"
+          bash macos/build_ffmpeg.sh "$OUTPUT"
+          tar -czf "$RUNNER_TEMP/AutoAE-ffmpeg-${{ matrix.architecture }}.tar.gz" \
+            -C "$OUTPUT" .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-build-${{ matrix.architecture }}
+          path: ${{ runner.temp }}/AutoAE-ffmpeg-${{ matrix.architecture }}.tar.gz
+          if-no-files-found: error
+          retention-days: 2
+
   merge-and-attach:
-    needs: build-native
+    needs: [build-native, build-ffmpeg]
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ inputs.release_tag }}
 
       - name: Download native app builds
         uses: actions/download-artifact@v4
         with:
           pattern: macos-app-*
           path: ${{ runner.temp }}/native-apps
+          merge-multiple: true
+
+      - name: Download native FFmpeg builds
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ffmpeg-build-*
+          path: ${{ runner.temp }}/ffmpeg-builds
           merge-multiple: true
 
       - name: Extract and merge universal app
@@ -140,6 +177,25 @@ jobs:
             --sign "$MACOS_SIGNING_IDENTITY" \
             --keychain "$KEYCHAIN_PATH" "$APP_PATH"
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+
+      - name: Merge, sign, and package universal FFmpeg
+        env:
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ffmpeg-x86_64" "$RUNNER_TEMP/ffmpeg-arm64"
+          tar -xzf "$RUNNER_TEMP/ffmpeg-builds/AutoAE-ffmpeg-x86_64.tar.gz" \
+            -C "$RUNNER_TEMP/ffmpeg-x86_64"
+          tar -xzf "$RUNNER_TEMP/ffmpeg-builds/AutoAE-ffmpeg-arm64.tar.gz" \
+            -C "$RUNNER_TEMP/ffmpeg-arm64"
+          python3 macos/package_universal_ffmpeg.py \
+            --intel-dir "$RUNNER_TEMP/ffmpeg-x86_64" \
+            --arm-dir "$RUNNER_TEMP/ffmpeg-arm64" \
+            --output-zip dist/AutoAE-ffmpeg-macos.zip \
+            --source-output dist/AutoAE-ffmpeg-source-9.0.2.tar.xz \
+            --notices macos/FFmpeg-LICENSE-NOTICE.txt \
+            --license "$RUNNER_TEMP/ffmpeg-arm64/COPYING.LGPLv2.1" \
+            --signing-identity "$MACOS_SIGNING_IDENTITY"
 
       - name: Rebuild ZIP with signed app
         run: |
@@ -271,4 +327,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
-        run: gh release upload "$RELEASE_TAG" dist/AutoAE-macos.zip dist/AutoAE-macos.dmg --repo "$GITHUB_REPOSITORY" --clobber
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            dist/AutoAE-macos.zip \
+            dist/AutoAE-macos.dmg \
+            dist/AutoAE-ffmpeg-macos.zip \
+            dist/AutoAE-ffmpeg-source-9.0.2.tar.xz \
+            --repo "$GITHUB_REPOSITORY" --clobber

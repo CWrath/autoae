@@ -15,6 +15,16 @@ from typing import Optional
 MAC_FFMPEG_DIRS = ("/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin")
 
 
+def _support_ffmpeg_dir() -> Path:
+    """Return Auto AE's per-user FFmpeg installation directory."""
+    support_dir = os.environ.get("AUTOAE_SUPPORT_DIR")
+    if support_dir:
+        root = Path(support_dir).expanduser()
+    else:
+        root = Path.home() / "Library" / "Application Support" / "AUTO_AE"
+    return root / "ffmpeg"
+
+
 def _application_root() -> Path:
     """Return the directory containing the source or packaged application."""
     packaged_root = getattr(sys, "_MEIPASS", None)
@@ -42,8 +52,9 @@ def configure_ffmpeg() -> Optional[Path]:
             return None
         return _add_to_path(bundled_bin, bundled_ffmpeg)
 
-    # Mac (and Linux): an ffmpeg-mac folder next to the app, then Homebrew / MacPorts
-    for bin_dir in [_application_root() / "ffmpeg-mac"] + [Path(d) for d in MAC_FFMPEG_DIRS]:
+    # Prefer Auto AE's writable per-user copy to binaries inside the read-only app bundle.
+    bundled_dirs = [_support_ffmpeg_dir(), _application_root() / "ffmpeg-mac"]
+    for bin_dir in bundled_dirs + [Path(d) for d in MAC_FFMPEG_DIRS]:
         candidate = bin_dir / "ffmpeg"
         if candidate.is_file() and os.access(candidate, os.X_OK):
             return _add_to_path(bin_dir, candidate)

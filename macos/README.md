@@ -27,11 +27,12 @@ to Applications.
 ## What the Mac needs
 
 - **Python:** bundled. No separate installation is required.
-- **FFmpeg** for Proxy Generator, File Converter and Media Browser: `brew install ffmpeg` (optional; requires
-  Homebrew). Skip this if you do not have Homebrew; the rest of Auto AE works without FFmpeg.
-  The app also looks in `/opt/homebrew/bin` and `/usr/local/bin`, or you can put `ffmpeg` and `ffprobe`
-  in an `ffmpeg-mac` folder here before building.
-- An internet connection is only needed for online features and update checks.
+- **FFmpeg** for Proxy Generator, File Converter and Media Browser is optional. If it is
+  missing, click **Install** beside the FFmpeg status in Auto AE. The signed universal
+  FFmpeg and FFprobe binaries download into `~/Library/Application Support/AUTO_AE/ffmpeg`;
+  no Terminal, Homebrew, or administrator access is needed. The rest of Auto AE works
+  without FFmpeg.
+- An internet connection is also needed for the optional one-click FFmpeg download.
 
 ## First launch
 
@@ -48,6 +49,7 @@ User settings and the updatable app source are in `~/Library/Application Support
 | | |
 |---|---|
 | `app/` | The copy of the code the app runs. Tools save their settings here too. |
+| `ffmpeg/` | Optional, app-managed FFmpeg and FFprobe binaries and their license notices. |
 | `venv/` | Used by older releases; the bundled-runtime app no longer needs it. |
 | `autoae.log` | Output from the last run. Check here if a tool misbehaves. |
 | `setup.log`, `launcher.log` | Setup details from older releases. |
@@ -67,14 +69,15 @@ To publish an update, set `APP_VERSION` in `app_version.py`, build the Windows i
 `build_windows_exe.py`, and create a GitHub release draft in `CWrath/autoae` with the matching
 `vMAJOR.MINOR.PATCH` tag. Attach `AutoAE-Setup.exe`, then run the **Build universal macOS release**
 workflow with that tag. The workflow builds on Intel and Apple Silicon runners, merges the native
-binaries, signs and notarizes the app and DMG, staples the tickets, and uploads both macOS
-assets. Configure these repository Actions secrets before running it:
+binaries, signs and notarizes the app and DMG, staples the tickets, and uploads the macOS app,
+DMG, universal FFmpeg binaries, and matching FFmpeg source archive. Configure these repository
+Actions secrets before running it:
 `MACOS_CERTIFICATE_P12` (base64-encoded `.p12`), `MACOS_CERTIFICATE_PASSWORD`,
 `MACOS_SIGNING_IDENTITY` (the full `Developer ID Application: Name (TEAMID)` identity),
 `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`. Attach both platform assets
 before publishing. Keep the `.p12` and its password private; never commit them.
 
-Build both platform assets from the same tagged source revision. The Windows installer bundles
+Build all platform assets from the same tagged source revision. The Windows installer bundles
 all Python tools, and the macOS release workflow packages those same tools into the universal app.
 
 ## Files in this folder

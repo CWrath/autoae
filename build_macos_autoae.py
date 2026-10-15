@@ -28,7 +28,8 @@ BUNDLE_ID = "com.autoae.app"
 
 APP_FILES = [
     "main.py", "theme.py", "base_tool.py", "tool_loader.py", "tool_template.py",
-    "app_updater.py", "app_version.py", "ffmpeg_setup.py", "error_help.py",
+    "app_updater.py", "app_version.py", "ffmpeg_setup.py", "ffmpeg_installer.py",
+    "error_help.py",
     "taskboard_core.py", "autoae_theme.json", "UI_THEME_GUIDE.md",
 ]
 APP_GLOBS = [

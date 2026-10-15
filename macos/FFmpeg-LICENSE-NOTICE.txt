@@ -1,0 +1,14 @@
+Auto AE uses FFmpeg 9.0.2, an audiovisual multimedia framework licensed under
+the GNU Lesser General Public License (LGPL), version 2.1 or later.
+
+These Auto AE macOS binaries are built from the unmodified FFmpeg 9.0.2 release
+with GPL and nonfree components disabled. The corresponding source archive is
+distributed alongside AutoAE-ffmpeg-macos.zip as
+AutoAE-ffmpeg-source-9.0.2.tar.xz in the same Auto AE GitHub release.
+
+FFmpeg project: https://ffmpeg.org/
+License text: COPYING.LGPLv2.1, included with the FFmpeg source and installer.
+Build configuration: macos/build_ffmpeg.sh in the matching Auto AE source tag.
+
+FFmpeg is a separate executable invoked by Auto AE. Auto AE is not affiliated
+with or endorsed by the FFmpeg project.

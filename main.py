@@ -14,6 +14,7 @@ import theme
 from theme import C, font
 from tool_loader import load_tools
 from ffmpeg_setup import configure_ffmpeg
+import ffmpeg_installer
 import error_help
 
 APP_NAME = "AUTO AE"
@@ -42,6 +43,8 @@ class AutoAE(ctk.CTk):
         self._closing = False
         self._update_queue = queue.Queue()
         self._update_check_active = False
+        self._ffmpeg_install_queue = queue.Queue()
+        self._ffmpeg_install_active = False
         self.current_category = ALL_TOOLS
         self.query = ""
         self.visible_tools = []
@@ -144,20 +147,20 @@ class AutoAE(ctk.CTk):
         ctk.CTkLabel(bar, text=VERSION_TEXT, font=font("caption"), text_color=C["text_subtle"],
                      height=30).pack(side="left", padx=16)
 
-        ok = self.ffmpeg_path is not None
         status = ctk.CTkFrame(bar, fg_color="transparent")
         status.pack(side="right", padx=16)
-        ctk.CTkFrame(status, width=8, height=8, corner_radius=4,
-                     fg_color=C["success"] if ok else C["warning"]).pack(side="left", padx=(0, 7))
-        if ok:
-            bundled = os.path.dirname(os.path.abspath(__file__)) in str(self.ffmpeg_path)
-            text = "FFmpeg ready · {}".format("bundled" if bundled else "system")
-        else:
-            text = "FFmpeg not found · click for help"
-        ctk.CTkLabel(status, text=text, font=font("caption"), text_color=C["text_muted"],
-                     height=30).pack(side="left")
-        if not ok:
-            theme.make_clickable(status, self.show_ffmpeg_help)
+        self.ffmpeg_status_dot = ctk.CTkFrame(status, width=8, height=8, corner_radius=4)
+        self.ffmpeg_status_dot.pack(side="left", padx=(0, 7))
+        self.ffmpeg_status_label = ctk.CTkLabel(
+            status, text="", font=font("caption"), text_color=C["text_muted"], height=30
+        )
+        self.ffmpeg_status_label.pack(side="left")
+        self.ffmpeg_install_button = theme.Button(
+            status, "Install FFmpeg", kind="secondary", height=24, width=112,
+            command=self.install_ffmpeg,
+        )
+        self.ffmpeg_install_button.pack_forget()
+        self._refresh_ffmpeg_status()
 
         ctk.CTkLabel(bar, text="{} tools".format(len(self.tools)), font=font("caption"),
                      text_color=C["text_subtle"], height=30).pack(side="right", padx=4)
@@ -371,13 +374,87 @@ class AutoAE(ctk.CTk):
 
     def show_ffmpeg_help(self):
         if sys.platform == "darwin":
-            detail = ("Install it with Homebrew by running this in Terminal:\n\n"
-                      "    brew install ffmpeg\n\n"
-                      "then quit and reopen Auto AE.")
+            detail = ("Use the Install button in the status bar to download FFmpeg "
+                      "directly into Auto AE. No Terminal or Homebrew is required.")
         else:
             detail = ("The bundled FFmpeg could not be found. Please install FFmpeg and add it to your system PATH.\n"
                       "See https://ffmpeg.org/download.html for instructions.")
         messagebox.showwarning("FFmpeg Not Found", "FFmpeg is required for some tools.\n\n" + detail)
+
+    def _refresh_ffmpeg_status(self):
+        ok = self.ffmpeg_path is not None
+        self.ffmpeg_status_dot.configure(fg_color=C["success"] if ok else C["warning"])
+        if ok:
+            installed_copy = str(ffmpeg_installer.support_dir() / "ffmpeg")
+            app_root = os.path.dirname(os.path.abspath(__file__))
+            ffmpeg_path = str(self.ffmpeg_path)
+            bundled = (
+                ffmpeg_path.startswith(installed_copy + os.sep)
+                or ffmpeg_path.startswith(app_root + os.sep)
+            )
+            self.ffmpeg_status_label.configure(
+                text="FFmpeg ready · {}".format("Auto AE" if bundled else "system")
+            )
+            self.ffmpeg_install_button.pack_forget()
+            return
+
+        self.ffmpeg_status_label.configure(text="FFmpeg not found")
+        if sys.platform == "darwin":
+            self.ffmpeg_install_button.pack(side="left", padx=(8, 0))
+        else:
+            self.ffmpeg_install_button.pack_forget()
+            theme.make_clickable(self.ffmpeg_status_label, self.show_ffmpeg_help)
+
+    def install_ffmpeg(self):
+        if self._ffmpeg_install_active:
+            return
+        self._ffmpeg_install_active = True
+        self.ffmpeg_install_button.configure(state="disabled", text="Starting…")
+        self._ffmpeg_install_queue = queue.Queue()
+        threading.Thread(target=self._install_ffmpeg_worker, daemon=True).start()
+        self.after(100, self._poll_ffmpeg_install)
+
+    def _install_ffmpeg_worker(self):
+        try:
+            ffmpeg_installer.install_ffmpeg(
+                progress_callback=lambda received, total: self._ffmpeg_install_queue.put(
+                    ("progress", received, total)
+                )
+            )
+            self._ffmpeg_install_queue.put(("installed",))
+        except Exception as exc:
+            self._ffmpeg_install_queue.put(("error", str(exc)))
+
+    def _poll_ffmpeg_install(self):
+        while True:
+            try:
+                event = self._ffmpeg_install_queue.get_nowait()
+            except queue.Empty:
+                break
+
+            if event[0] == "progress":
+                received, total = event[1], event[2]
+                percent = int(received * 100 / total) if total else 0
+                self.ffmpeg_install_button.configure(
+                    text="Downloading {}%".format(percent)
+                )
+            elif event[0] == "installed":
+                self._ffmpeg_install_active = False
+                self.ffmpeg_path = configure_ffmpeg()
+                self._refresh_ffmpeg_status()
+                messagebox.showinfo(
+                    "FFmpeg installed",
+                    "FFmpeg and FFprobe are ready for Auto AE's media tools.",
+                )
+            elif event[0] == "error":
+                self._ffmpeg_install_active = False
+                self.ffmpeg_install_button.configure(
+                    state="normal", text="Install FFmpeg"
+                )
+                messagebox.showerror("FFmpeg installation failed", event[1])
+
+        if self._ffmpeg_install_active:
+            self.after(100, self._poll_ffmpeg_install)
 
     def setup_mac_app(self):
         """Mac: ⌘Q goes through on_close so running tools stop cleanly, and clicking the

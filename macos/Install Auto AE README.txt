@@ -24,7 +24,8 @@ FIRST LAUNCH
 ------------
 
 Auto AE starts directly with its bundled Python runtime and dependencies. An
-internet connection is needed for the first update check and online features.
+internet connection is needed for the first update check, online features, and
+the optional FFmpeg download.
 
 If macOS blocks the app, first confirm that it came from the official Auto AE
 release. Then open System Settings > Privacy & Security and follow the prompt
@@ -34,10 +35,8 @@ Auto AE is installed at:
 
     ~/Applications/Auto AE.app
 
-FFmpeg is optional and is needed only by some media tools. If you already have
-Homebrew, you can install it with:
-
-    brew install ffmpeg
-
-If you do not have Homebrew, skip this optional step. The rest of Auto AE works
-without FFmpeg.
+FFmpeg is optional and is needed only by some media tools. If it is missing,
+click Install beside the FFmpeg status in Auto AE. The app downloads the signed
+FFmpeg and FFprobe tools and keeps them in its Application Support folder. This
+requires an internet connection; no Terminal, Homebrew, or administrator access
+is needed. The rest of Auto AE works without FFmpeg.
