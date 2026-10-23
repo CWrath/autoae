@@ -34,6 +34,13 @@ class MacOSUniversalMergeTests(unittest.TestCase):
             framework.symlink_to(os.path.relpath(target, frameworks))
         else:
             framework.write_bytes(b"\xfe\xed\xfa\xcf " + architecture.encode())
+        for platform, binary_architecture in (
+            ("osx-arm64", "arm64"),
+            ("osx-x86_64", "x86_64"),
+        ):
+            helper = frameworks / "tkinterdnd2" / "tkdnd" / platform / "libtkdnd.dylib"
+            helper.parent.mkdir(parents=True, exist_ok=True)
+            helper.write_bytes(b"\xfe\xed\xfa\xcf " + binary_architecture.encode())
 
     def test_merges_framework_when_file_and_symlink_layouts_differ(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -46,10 +53,16 @@ class MacOSUniversalMergeTests(unittest.TestCase):
 
             def run_lipo(arguments, **kwargs):
                 if "-create" in arguments:
+                    self.assertNotIn("tkinterdnd2", arguments[1])
+                    self.assertNotIn("tkinterdnd2", arguments[2])
                     Path(arguments[-1]).write_bytes(b"\xfe\xed\xfa\xcf universal")
                     return subprocess.CompletedProcess(arguments, 0)
                 binary = Path(arguments[-1])
-                if str(binary).startswith(str(output_app)):
+                if "osx-arm64" in str(binary):
+                    architectures = "arm64"
+                elif "osx-x86_64" in str(binary):
+                    architectures = "x86_64"
+                elif str(binary).startswith(str(output_app)):
                     architectures = "x86_64 arm64"
                 elif str(binary).startswith(str(x86_app)):
                     architectures = "x86_64"
@@ -65,6 +78,16 @@ class MacOSUniversalMergeTests(unittest.TestCase):
             merged_framework = output_app / "Contents" / "Frameworks" / "libcrypto.3.dylib"
             self.assertFalse(merged_framework.is_symlink())
             self.assertIn(b"universal", merged_framework.read_bytes())
+            for platform, binary_architecture in (
+                ("osx-arm64", "arm64"),
+                ("osx-x86_64", "x86_64"),
+            ):
+                helper = (
+                    output_app / "Contents" / "Frameworks" / "tkinterdnd2"
+                    / "tkdnd" / platform / "libtkdnd.dylib"
+                )
+                expected = b"\xfe\xed\xfa\xcf " + binary_architecture.encode()
+                self.assertEqual(helper.read_bytes(), expected)
 
 
 if __name__ == "__main__":

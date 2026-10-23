@@ -164,12 +164,20 @@ def merge_apps(x86_app, arm_app, output_app, expected_version=None):
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, target)
 
+    def is_platform_specific_tkdnd_binary(relative):
+        parts = relative.parts
+        return (
+            parts[:4] == ("Contents", "Frameworks", "tkinterdnd2", "tkdnd")
+            and parts[4:5] in {("osx-arm64",), ("osx-x86_64",)}
+        )
+
     def native_binaries(app_path):
         return {
             path.relative_to(app_path)
             for path in app_path.rglob("*")
             if path.is_file() and not path.is_symlink()
             and path.relative_to(app_path) not in special_paths and is_macho(path)
+            and not is_platform_specific_tkdnd_binary(path.relative_to(app_path))
         }
 
     x86_binaries = native_binaries(x86_app)
