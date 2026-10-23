@@ -150,6 +150,11 @@ def sync_bins(source_paths, destination_paths, overwrite=True):
     return results
 
 
+def initialize_drag_and_drop(window):
+    """Load TkDND into an existing Tk interpreter."""
+    return TkinterDnD._require(window)
+
+
 class Tool(BaseTool):
     def __init__(self):
         super().__init__()
@@ -164,7 +169,7 @@ class Tool(BaseTool):
 
     def create_window(self, parent):
         window = self.create_tool_window(parent, "Bin Sync", 780, 690)
-        TkinterDnD.require(window)
+        initialize_drag_and_drop(window)
         window.minsize(680, 600)
 
         page = theme.page(window)

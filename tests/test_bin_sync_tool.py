@@ -11,6 +11,7 @@ from tools.bin_sync_tool import (
     SELECT_RECENT_BIN,
     SELECT_RECENT_DESTINATION,
     Tool,
+    initialize_drag_and_drop,
     sync_bins,
 )
 
@@ -26,6 +27,15 @@ class BinSyncTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp_dir.cleanup()
+
+    def test_drag_and_drop_initialization_uses_tkinterdnd2_loader(self):
+        window = Mock()
+
+        with patch("tools.bin_sync_tool.TkinterDnD._require", return_value="2.9.4") as require:
+            result = initialize_drag_and_drop(window)
+
+        require.assert_called_once_with(window)
+        self.assertEqual(result, "2.9.4")
 
     def test_sync_bins_copies_each_bin_to_each_destination(self):
         first = self.sources / "first.avb"
