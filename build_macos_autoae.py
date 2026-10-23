@@ -40,7 +40,7 @@ SEED_DIRS = ("foldertemplates",)
 EXECUTABLE_DIRS = ("ffmpeg-mac",)
 COLLECT_PACKAGES = (
     "certifi", "customtkinter", "darkdetect", "PIL", "numpy", "pandas", "openpyxl",
-    "matplotlib", "cv2", "psutil", "schedule", "chardet", "watchdog",
+    "matplotlib", "cv2", "psutil", "schedule", "chardet", "watchdog", "tkinterdnd2",
     "pymediainfo", "pygame", "keyring", "pymupdf", "fitz",
 )
 

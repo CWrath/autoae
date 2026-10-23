@@ -532,6 +532,14 @@ class AutoAE(ctk.CTk):
                 pass
         self.tool_windows.clear()
 
+        for tool in self.tools:
+            close_app = getattr(tool, "close_app", None)
+            if close_app:
+                try:
+                    close_app()
+                except Exception as error:
+                    print(f"Error stopping {tool.name}: {error}")
+
         self.quit()
         self.destroy()
 

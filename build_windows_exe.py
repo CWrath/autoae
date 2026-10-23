@@ -66,6 +66,7 @@ def main():
         "--workpath", str(ROOT / "build-windows"),
         "--specpath", str(ROOT / "build-windows"),
         "--collect-all", "customtkinter",
+        "--collect-all", "tkinterdnd2",
         "--collect-all", "pymupdf",
         "--add-data", f"{ROOT / 'assets'};assets",
         "--add-data", f"{ROOT / 'autoae_theme.json'};.",

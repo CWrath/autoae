@@ -2,6 +2,7 @@
 # environment the first time it opens, and again whenever this file changes.
 customtkinter==5.2.2
 certifi>=2024.2.2,<2027
+tkinterdnd2>=0.6.4,<1
 darkdetect>=0.8
 pillow>=10.0,<13
 numpy>=1.26,<3

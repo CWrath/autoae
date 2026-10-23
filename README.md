@@ -11,8 +11,9 @@ CustomTkinter. It includes media, editorial, storage, and project-setup tools.
 - **Editorial:** Convert EDL/ALE/XML files to spreadsheets, turn subtitles into
   timeline markers, calculate timecodes, and sync Avid bins.
 - **Project setup:** Create project folder structures, organize watch folders,
-  back up projects, and carry editing shortcuts, workspaces, presets, and plug-ins
-  between machines.
+  automatically rename and route incoming media with saved watch rules, back up
+  projects, and carry editing shortcuts, workspaces, presets, and plug-ins between
+  machines.
 - **Storage & utilities:** Compare drives, monitor disk space, check USB cable
   data capability, and batch-rename files.
 - **Workflow:** Track tasks from email and Slack, and check for app updates from

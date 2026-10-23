@@ -7,6 +7,7 @@ from tkinter import filedialog, messagebox
 import tkinter as tk
 
 import customtkinter as ctk
+from tkinterdnd2 import COPY, DND_FILES, TkinterDnD
 
 from base_tool import BaseTool
 import theme
@@ -23,6 +24,9 @@ def _data_dir():
 RECENT_PATHS_FILE = _data_dir() / "bin_sync_recent.json"
 PRESETS_FILE = _data_dir() / "bin_sync_presets.json"
 MAX_RECENT_PATHS = 10
+SELECT_PRESET = "Select a preset"
+SELECT_RECENT_BIN = "Select a recent bin"
+SELECT_RECENT_DESTINATION = "Select a recent destination"
 
 
 def load_recent_paths():
@@ -133,26 +137,40 @@ def sync_bin(source_path, destination_paths, overwrite=True):
     return results
 
 
+def sync_bins(source_paths, destination_paths, overwrite=True):
+    """Copy each Avid bin to each destination and retain per-copy errors."""
+    results = []
+    destinations = list(destination_paths)
+    for source in source_paths:
+        try:
+            bin_results = sync_bin(source, destinations, overwrite=overwrite)
+        except (FileNotFoundError, ValueError) as error:
+            bin_results = [(Path(destination), error) for destination in destinations]
+        results.extend((Path(source), destination, error) for destination, error in bin_results)
+    return results
+
+
 class Tool(BaseTool):
     def __init__(self):
         super().__init__()
         self.name = "Bin Sync"
-        self.description = "Copy one Avid .avb bin to multiple locations"
+        self.description = "Copy multiple Avid .avb bins to multiple locations"
         self.category = "Editorial & Turnover"
         self.icon = "folder-sync"
-        self.source_path = None
+        self.source_paths = []
         self.destination_paths = []
         self.recent_paths = load_recent_paths()
         self.presets = load_presets()
 
     def create_window(self, parent):
         window = self.create_tool_window(parent, "Bin Sync", 780, 690)
+        TkinterDnD.require(window)
         window.minsize(680, 600)
 
         page = theme.page(window)
         theme.tool_header(
             page, self,
-            subtitle="Choose one .avb bin, then add every folder that should receive a copy."
+            subtitle="Choose one or more .avb bins, then add every folder that should receive copies."
         ).pack(fill="x", pady=(0, 18))
 
         # Actions first so they stay visible when the window is short
@@ -166,36 +184,53 @@ class Tool(BaseTool):
             checkbox_height=18,
         ).pack(side="left")
         theme.Button(
-            options_frame, "Sync Bin", kind="primary", width=130, height=38,
+            options_frame, "Sync Bins", kind="primary", width=130, height=38,
             command=self.perform_sync,
         ).pack(side="right")
 
-        # --- Source bin ------------------------------------------------------
-        source_card = theme.Card(page, title="Source bin")
+        # --- Source bins -----------------------------------------------------
+        source_card = theme.Card(
+            page,
+            title="Source bins",
+            subtitle="Drag and drop .avb files here, or add them with the button.",
+        )
         source_card.pack(fill="x")
         source_frame = source_card.body
-        source_frame.grid_columnconfigure(1, weight=1)
-
-        path_box = ctk.CTkFrame(source_frame, fg_color=C["field"], border_width=1,
-                                border_color=C["border_strong"], corner_radius=8, height=34)
-        path_box.grid(row=0, column=0, columnspan=2, sticky="ew")
-        path_box.pack_propagate(False)
-        self.source_label = ctk.CTkLabel(path_box, text="No bin selected", anchor="w", height=30)
-        self.source_label.pack(fill="x", padx=10, pady=2)
-        theme.Button(
-            source_frame, "Choose .avb Bin…", kind="secondary", width=150, command=self.choose_source
-        ).grid(row=0, column=2, padx=(8, 0))
-
-        theme.muted(source_frame, "Recent", role="body", width=70).grid(
-            row=1, column=0, sticky="w", pady=(10, 0))
-        self.recent_source_menu = ctk.CTkOptionMenu(
+        source_frame.grid_columnconfigure(0, weight=1)
+        source_frame.grid_rowconfigure(0, weight=1)
+        self.source_list = theme.ThemedListbox(
             source_frame,
+            height=4,
+            selectmode=tk.EXTENDED,
+            exportselection=False,
+        )
+        self.source_list.grid(row=0, column=0, columnspan=3, sticky="nsew")
+        self.source_list.drop_target_register(DND_FILES)
+        self.source_list.dnd_bind("<<Drop>>", self.handle_source_drop)
+
+        source_buttons = ctk.CTkFrame(source_frame, fg_color="transparent")
+        source_buttons.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        theme.Button(
+            source_buttons, "Add Bins…", kind="secondary", width=110, command=self.choose_source
+        ).pack(side="left")
+        theme.Button(
+            source_buttons, "Remove Selected", kind="ghost", width=130,
+            command=self.remove_selected_sources,
+        ).pack(side="left", padx=(8, 0))
+        theme.Button(
+            source_buttons, "Clear All", kind="ghost", width=86, command=self.clear_sources,
+        ).pack(side="left", padx=(8, 0))
+        self.recent_source_menu = ctk.CTkOptionMenu(
+            source_buttons,
             values=self.recent_source_values(),
             command=self.select_recent_source,
             dynamic_resizing=False,
+            width=220,
             height=34,
         )
-        self.recent_source_menu.grid(row=1, column=1, columnspan=2, sticky="ew", pady=(10, 0))
+        self.recent_source_menu.pack(side="right")
+        self.recent_source_menu.set(SELECT_RECENT_BIN)
+        theme.muted(source_buttons, "Add recent", role="body").pack(side="right", padx=(0, 8))
 
         # --- Destinations ----------------------------------------------------
         destinations_card = theme.Card(page, title="Destination folders")
@@ -213,6 +248,7 @@ class Tool(BaseTool):
             height=34,
         )
         self.preset_menu.grid(row=0, column=1, sticky="ew")
+        self.preset_menu.set(SELECT_PRESET)
         preset_buttons = ctk.CTkFrame(destinations_frame, fg_color="transparent")
         preset_buttons.grid(row=0, column=2, padx=(8, 0))
         theme.Button(
@@ -251,38 +287,81 @@ class Tool(BaseTool):
             height=34,
         )
         self.recent_destination_menu.pack(side="right")
+        self.recent_destination_menu.set(SELECT_RECENT_DESTINATION)
         theme.muted(destination_buttons, "Add recent", role="body").pack(side="right", padx=(0, 8))
 
         self.window = window
         return window
 
     def choose_source(self):
-        selected = filedialog.askopenfilename(
-            title="Choose Avid bin",
+        selected = filedialog.askopenfilenames(
+            title="Choose Avid bins",
             filetypes=[("Avid bins", "*.avb"), ("All files", "*.*")],
         )
-        if selected:
-            self.source_path = Path(selected)
-            self.source_label.configure(text=str(self.source_path))
-            add_recent_path(self.recent_paths, "sources", self.source_path)
-            self.refresh_recent_menus()
+        self.add_sources(selected, update_recent=True)
+
+    def handle_source_drop(self, event):
+        paths = self.source_list.tk.splitlist(event.data)
+        valid_paths = []
+        ignored_paths = []
+        for path in paths:
+            source = Path(path)
+            if source.is_file() and source.suffix.lower() == ".avb":
+                valid_paths.append(source)
+            else:
+                ignored_paths.append(str(source))
+
+        if valid_paths:
+            self.add_sources(valid_paths, update_recent=True)
+        if ignored_paths:
+            messagebox.showwarning(
+                "Some dropped items were ignored",
+                "Only existing .avb files can be added:\n\n"
+                + "\n".join(ignored_paths),
+            )
+        return COPY
 
     def select_recent_source(self, selected):
-        if selected == "No recent bins":
+        if selected == SELECT_RECENT_BIN:
             return
-        self.source_path = Path(selected)
-        self.source_label.configure(text=str(self.source_path))
+        self.add_sources([selected])
+
+    def add_sources(self, paths, update_recent=False):
+        for path in paths:
+            source = Path(path).resolve()
+            if source not in self.source_paths:
+                self.source_paths.append(source)
+            if update_recent:
+                add_recent_path(self.recent_paths, "sources", source)
+        self.refresh_sources()
+        if update_recent:
+            self.refresh_recent_menus()
+
+    def remove_selected_sources(self):
+        for index in reversed(self.source_list.curselection()):
+            del self.source_paths[index]
+        self.refresh_sources()
+
+    def clear_sources(self):
+        self.source_paths.clear()
+        self.refresh_sources()
+
+    def refresh_sources(self):
+        self.source_list.delete(0, tk.END)
+        for source in self.source_paths:
+            self.source_list.insert(tk.END, str(source))
 
     def select_recent_destination(self, selected):
-        if selected == "No recent destinations":
+        if selected == SELECT_RECENT_DESTINATION:
             return
         destination = Path(selected)
         if destination not in self.destination_paths:
             self.destination_paths.append(destination)
             self.refresh_destinations()
+            self.preset_menu.set(SELECT_PRESET)
 
     def load_preset(self, selected):
-        if selected == "No saved presets":
+        if selected == SELECT_PRESET:
             return
 
         destinations = self.presets.get(selected)
@@ -323,7 +402,7 @@ class Tool(BaseTool):
 
     def delete_selected_preset(self):
         selected = self.preset_menu.get()
-        if selected == "No saved presets":
+        if selected == SELECT_PRESET:
             return
         if selected not in self.presets:
             messagebox.showerror("Unable to delete preset", f"Preset not found: {selected}")
@@ -352,6 +431,7 @@ class Tool(BaseTool):
             add_recent_path(self.recent_paths, "destinations", destination)
             self.refresh_destinations()
             self.refresh_recent_menus()
+            self.preset_menu.set(SELECT_PRESET)
 
     def remove_selected_destination(self):
         selection = self.destination_list.curselection()
@@ -360,10 +440,12 @@ class Tool(BaseTool):
 
         del self.destination_paths[selection[0]]
         self.refresh_destinations()
+        self.preset_menu.set(SELECT_PRESET)
 
     def clear_destinations(self):
         self.destination_paths.clear()
         self.refresh_destinations()
+        self.preset_menu.set(SELECT_PRESET)
 
     def refresh_destinations(self):
         self.destination_list.delete(0, tk.END)
@@ -371,13 +453,13 @@ class Tool(BaseTool):
             self.destination_list.insert(tk.END, str(destination))
 
     def recent_source_values(self):
-        return self.recent_paths["sources"] or ["No recent bins"]
+        return [SELECT_RECENT_BIN, *self.recent_paths["sources"]]
 
     def recent_destination_values(self):
-        return self.recent_paths["destinations"] or ["No recent destinations"]
+        return [SELECT_RECENT_DESTINATION, *self.recent_paths["destinations"]]
 
     def preset_values(self):
-        return sorted(self.presets) or ["No saved presets"]
+        return [SELECT_PRESET, *sorted(self.presets)]
 
     def refresh_recent_menus(self):
         self.recent_source_menu.configure(values=self.recent_source_values())
@@ -385,14 +467,20 @@ class Tool(BaseTool):
 
     def refresh_preset_menu(self):
         self.preset_menu.configure(values=self.preset_values())
-        if self.presets:
-            self.preset_menu.set(sorted(self.presets)[0])
-        else:
-            self.preset_menu.set("No saved presets")
+        self.preset_menu.set(SELECT_PRESET)
+
+    def clear_sync_inputs(self):
+        self.source_paths.clear()
+        self.destination_paths.clear()
+        self.refresh_sources()
+        self.refresh_destinations()
+        self.preset_menu.set(SELECT_PRESET)
+        self.recent_source_menu.set(SELECT_RECENT_BIN)
+        self.recent_destination_menu.set(SELECT_RECENT_DESTINATION)
 
     def perform_sync(self):
-        if self.source_path is None:
-            messagebox.showwarning("No bin selected", "Choose an .avb bin first.")
+        if not self.source_paths:
+            messagebox.showwarning("No bins selected", "Choose at least one .avb bin first.")
             return
         if not self.destination_paths:
             messagebox.showwarning(
@@ -401,60 +489,80 @@ class Tool(BaseTool):
             )
             return
 
-        destinations = []
-        skipped = []
-        for destination in self.destination_paths:
-            target = Path(destination) / self.source_path.name
-            lock_path = bin_lock_path(target)
-            if not lock_path.is_file():
-                destinations.append(destination)
-                continue
-
-            remove_lock = messagebox.askyesno(
-                "Avid bin is locked",
-                f"A lock file exists for {target.name} in:\n{destination}\n\n"
-                "Delete the lock file and continue syncing to this location?",
+        names = [source.name.casefold() for source in self.source_paths]
+        if len(names) != len(set(names)):
+            messagebox.showerror(
+                "Duplicate bin names",
+                "Selected bins must have unique file names so they do not overwrite each other "
+                "at the destinations.",
             )
-            if not remove_lock:
-                skipped.append(
-                    (destination, f"Bin lock was kept: {lock_path}")
+            return
+
+        results = []
+        for source in self.source_paths:
+            destinations = []
+            for destination in self.destination_paths:
+                target = Path(destination) / source.name
+                lock_path = bin_lock_path(target)
+                if not lock_path.is_file():
+                    destinations.append(destination)
+                    continue
+
+                remove_lock = messagebox.askyesno(
+                    "Avid bin is locked",
+                    f"A lock file exists for {target.name} in:\n{destination}\n\n"
+                    "Delete the lock file and continue syncing to this location?",
                 )
-                continue
+                if not remove_lock:
+                    results.append((
+                        source,
+                        destination,
+                        RuntimeError(f"Bin lock was kept: {lock_path}"),
+                    ))
+                    continue
 
-            try:
-                lock_path.unlink()
-            except OSError as error:
-                skipped.append((destination, f"Unable to delete bin lock: {error}"))
-                continue
-            destinations.append(destination)
+                try:
+                    lock_path.unlink()
+                except OSError as error:
+                    results.append((source, destination, RuntimeError(
+                        f"Unable to delete bin lock: {error}"
+                    )))
+                    continue
+                destinations.append(destination)
 
-        if not destinations and skipped:
-            details = "\n".join(f"- {destination}: {error}" for destination, error in skipped)
-            messagebox.showwarning(
-                "Bin sync cancelled",
-                f"No destinations were available for syncing.\n\n{details}",
-            )
-            return
+            if destinations:
+                results.extend(sync_bins(
+                    [source],
+                    destinations,
+                    overwrite=self.overwrite_var.get(),
+                ))
 
-        try:
-            results = sync_bin(
-                self.source_path,
-                destinations,
-                overwrite=self.overwrite_var.get(),
-            )
-        except (FileNotFoundError, ValueError) as error:
-            messagebox.showerror("Unable to sync bin", str(error))
-            return
-
-        results.extend((destination, RuntimeError(error)) for destination, error in skipped)
-        successful = [destination for destination, error in results if error is None]
-        failed = [(destination, error) for destination, error in results if error]
-        message = f"Synced {self.source_path.name} to {len(successful)} location(s)."
+        successful = [
+            (source, destination)
+            for source, destination, error in results
+            if error is None
+        ]
+        failed = [
+            (source, destination, error)
+            for source, destination, error in results
+            if error is not None
+        ]
+        successful_locations = {destination for _, destination in successful}
+        copy_label = "copy" if len(successful) == 1 else "copies"
+        location_label = "location" if len(successful_locations) == 1 else "locations"
+        message = (
+            f"Synced {len(successful)} bin {copy_label} across "
+            f"{len(successful_locations)} {location_label}."
+        )
         if failed:
-            details = "\n".join(f"- {destination}: {error}" for destination, error in failed)
+            details = "\n".join(
+                f"- {source.name} -> {destination}: {error}"
+                for source, destination, error in failed
+            )
             messagebox.showwarning(
                 "Bin sync completed with errors",
-                f"{message}\n\nFailed locations:\n{details}",
+                f"{message}\n\nFailed copies:\n{details}",
             )
         else:
             messagebox.showinfo("Bin sync complete", message)
+            self.clear_sync_inputs()
