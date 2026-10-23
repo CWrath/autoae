@@ -35,8 +35,8 @@ class MacOSUniversalMergeTests(unittest.TestCase):
         else:
             framework.write_bytes(b"\xfe\xed\xfa\xcf " + architecture.encode())
         for platform, binary_architecture in (
-            ("osx-arm64", "arm64"),
-            ("osx-x86_64", "x86_64"),
+            ("osx-arm64-tcl9", "arm64"),
+            ("osx-x86_64-tcl9", "x86_64"),
         ):
             helper = frameworks / "tkinterdnd2" / "tkdnd" / platform / "libtkdnd.dylib"
             helper.parent.mkdir(parents=True, exist_ok=True)
@@ -79,8 +79,8 @@ class MacOSUniversalMergeTests(unittest.TestCase):
             self.assertFalse(merged_framework.is_symlink())
             self.assertIn(b"universal", merged_framework.read_bytes())
             for platform, binary_architecture in (
-                ("osx-arm64", "arm64"),
-                ("osx-x86_64", "x86_64"),
+                ("osx-arm64-tcl9", "arm64"),
+                ("osx-x86_64-tcl9", "x86_64"),
             ):
                 helper = (
                     output_app / "Contents" / "Frameworks" / "tkinterdnd2"

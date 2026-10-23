@@ -168,7 +168,8 @@ def merge_apps(x86_app, arm_app, output_app, expected_version=None):
         parts = relative.parts
         return (
             parts[:4] == ("Contents", "Frameworks", "tkinterdnd2", "tkdnd")
-            and parts[4:5] in {("osx-arm64",), ("osx-x86_64",)}
+            and len(parts) > 4
+            and parts[4].startswith(("osx-arm64", "osx-x86_64"))
         )
 
     def native_binaries(app_path):
