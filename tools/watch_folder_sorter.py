@@ -15,6 +15,7 @@ import customtkinter as ctk
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
+import background_services
 import error_help
 import theme
 from base_tool import BaseTool
@@ -75,7 +76,7 @@ def load_rules(path=RULES_FILE):
     with path.open("r", encoding="utf-8") as handle:
         saved = json.load(handle)
     if not isinstance(saved, dict) or not isinstance(saved.get("rules"), list):
-        raise ValueError("Watch Folder Sorter settings must contain a rules list.")
+        raise ValueError("Auto Ingest settings must contain a rules list.")
     rules = []
     for item in saved["rules"]:
         if not isinstance(item, dict):
@@ -110,7 +111,7 @@ def load_saved_tokens(path=RULES_FILE):
     with path.open("r", encoding="utf-8") as handle:
         saved = json.load(handle)
     if not isinstance(saved, dict):
-        raise ValueError("Watch Folder Sorter settings must contain an object.")
+        raise ValueError("Auto Ingest settings must contain an object.")
     tokens = saved.get("saved_tokens", [])
     if not isinstance(tokens, list) or any(not isinstance(token, str) for token in tokens):
         raise ValueError("The saved custom token bank is invalid.")
@@ -290,10 +291,115 @@ class FileHandler(FileSystemEventHandler):
             self.sorter.queue_file(event.dest_path, self.rule)
 
 
-class Tool(BaseTool):
+class IngestEngine:
+    """Watching and moving files, with no window. Auto Ingest's tool and the tray agent both use it."""
+
+    def _init_engine(self):
+        self._active_files = set()
+        self._active_files_lock = threading.Lock()
+        self._move_lock = threading.Lock()
+
+    def log(self, message):
+        print(message)
+
+    def start_observer(self, rules):
+        observer = Observer()
+        try:
+            for rule in rules:
+                observer.schedule(FileHandler(self, rule), rule["watch_folder"], recursive=True)
+            observer.start()
+        except (OSError, RuntimeError):
+            observer.stop()
+            raise
+        return observer
+
+    def queue_file(self, path, rule):
+        source = Path(path)
+        key = os.path.normcase(str(source.resolve()))
+        with self._active_files_lock:
+            if key in self._active_files:
+                return
+            self._active_files.add(key)
+        threading.Thread(
+            target=self._watch_file_worker, args=(source, rule, key), daemon=True,
+        ).start()
+
+    def queue_directory_scan(self, path, rule):
+        threading.Thread(
+            target=self._scan_new_directory, args=(Path(path), rule), daemon=True,
+        ).start()
+
+    def _scan_new_directory(self, directory, rule):
+        time.sleep(1)
+        if not directory.is_dir():
+            return
+        try:
+            for source in directory.rglob("*"):
+                if source.is_file():
+                    self.queue_file(source, rule)
+        except OSError as error:
+            self.log(f"Error scanning new folder {directory}: {error}")
+
+    def _watch_file_worker(self, source, rule, key):
+        try:
+            self.process_stable_file(source, rule, claimed=True)
+        finally:
+            with self._active_files_lock:
+                self._active_files.discard(key)
+
+    def process_stable_file(self, source, rule, claimed=False):
+        source = Path(source)
+        key = os.path.normcase(str(source.resolve()))
+        if not claimed:
+            with self._active_files_lock:
+                if key in self._active_files:
+                    return None
+                self._active_files.add(key)
+        try:
+            if not self.wait_until_stable(source):
+                if source.exists():
+                    self.log(f"Error: file did not finish writing: {source}")
+                    return False
+                return None
+            with self._move_lock:
+                if not source.is_file():
+                    return None
+                destination = move_incoming_file(source, rule)
+            self.log(f"Processed: {source.name} -> {destination}")
+            return True
+        except (OSError, ValueError, KeyError) as error:
+            self.log(f"Error processing {source}: {error}")
+            return False
+        finally:
+            with self._active_files_lock:
+                self._active_files.discard(key)
+
+    @staticmethod
+    def wait_until_stable(source, timeout=300, interval=0.5, stable_checks=5):
+        deadline = time.monotonic() + timeout
+        previous_size = None
+        stable_count = 0
+        while time.monotonic() < deadline:
+            try:
+                stat = source.stat()
+                signature = (stat.st_size, stat.st_mtime_ns)
+            except OSError:
+                return False
+            if signature == previous_size:
+                stable_count += 1
+                if stable_count >= stable_checks:
+                    return True
+            else:
+                previous_size = signature
+                stable_count = 0
+            time.sleep(interval)
+        return False
+
+
+class Tool(IngestEngine, BaseTool):
     def __init__(self):
         super().__init__()
-        self.name = "Watch Folder Sorter"
+        self.name = "Auto Ingest"
         self.description = "Rename and route media from multiple watched folders"
         self.category = "Media"
         self.icon = "folder-input"
@@ -303,14 +409,12 @@ class Tool(BaseTool):
         self.is_watching = False
         self.active_rules = []
         self._log_queue = queue.Queue()
-        self._active_files = set()
-        self._active_files_lock = threading.Lock()
-        self._move_lock = threading.Lock()
+        self._init_engine()
         self._batch_running = False
         self._rules_file = RULES_FILE
 
     def create_window(self, parent):
-        window = self.create_tool_window(parent, "Watch Folder Sorter", 1100, 1000)
+        window = self.create_tool_window(parent, "Auto Ingest", 1100, 1000)
         window.minsize(920, 760)
         self.window = window
 
@@ -951,25 +1055,28 @@ class Tool(BaseTool):
         if self.is_watching:
             self.stop_watching()
             return
+        if background_services.agent_has("auto_ingest"):
+            background_services.set_service("auto_ingest", False)
+            self.log("Stopped watching in the background.")
+            self._update_watching_ui()
+            return
         rules = self.validate_for_run()
         if rules is None:
             return
-        observer = Observer()
         try:
-            for rule in rules:
-                observer.schedule(FileHandler(self, rule), rule["watch_folder"], recursive=True)
-            observer.start()
+            observer = self.start_observer(rules)
         except (OSError, RuntimeError) as error:
-            observer.stop()
             messagebox.showerror("Unable to start watching", str(error), parent=self.window)
             return
+        background_services.set_service("auto_ingest", False)
         self.observer = observer
         self.active_rules = rules
         self.is_watching = True
-        self.log(f"Watching {len(rules)} rule(s). Watching continues while Auto AE is open.")
+        self.log(f"Watching {len(rules)} rule(s). If you close Auto AE, watching carries on from the tray icon.")
         self._update_watching_ui()
 
     def stop_watching(self):
+        background_services.set_service("auto_ingest", False)
         observer, self.observer = self.observer, None
         if observer is not None:
             observer.stop()
@@ -988,13 +1095,16 @@ class Tool(BaseTool):
         self._update_watching_ui()
 
     def close_app(self):
+        was_watching = self.is_watching
         if self.observer is not None:
             observer, self.observer = self.observer, None
             observer.stop()
             observer.join(timeout=5)
             if observer.is_alive():
-                raise RuntimeError("Watch Folder Sorter did not stop within 5 seconds.")
+                raise RuntimeError("Auto Ingest did not stop within 5 seconds.")
         self.is_watching = False
+        if was_watching:
+            background_services.handover("auto_ingest")
 
     def _update_watching_ui(self):
         if not hasattr(self, "start_button"):
@@ -1002,6 +1112,9 @@ class Tool(BaseTool):
         if self.is_watching:
             self.start_button.configure(text="Stop Watching")
             self.status_label.configure(text="Status: Watching")
+        elif background_services.agent_has("auto_ingest"):
+            self.start_button.configure(text="Stop Watching")
+            self.status_label.configure(text="Status: Watching in the background (tray icon)")
         else:
             self.start_button.configure(text="Start Watching")
             self.status_label.configure(text="Status: Not watching")
@@ -1043,88 +1156,6 @@ class Tool(BaseTool):
             self.log(f"Run Now finished: {processed} file(s) moved, {failed} error(s).")
         finally:
             self._batch_running = False
-
-    def queue_file(self, path, rule):
-        source = Path(path)
-        key = os.path.normcase(str(source.resolve()))
-        with self._active_files_lock:
-            if key in self._active_files:
-                return
-            self._active_files.add(key)
-        threading.Thread(
-            target=self._watch_file_worker, args=(source, rule, key), daemon=True,
-        ).start()
-
-    def queue_directory_scan(self, path, rule):
-        threading.Thread(
-            target=self._scan_new_directory, args=(Path(path), rule), daemon=True,
-        ).start()
-
-    def _scan_new_directory(self, directory, rule):
-        time.sleep(1)
-        if not directory.is_dir():
-            return
-        try:
-            for source in directory.rglob("*"):
-                if source.is_file():
-                    self.queue_file(source, rule)
-        except OSError as error:
-            self.log(f"Error scanning new folder {directory}: {error}")
-
-    def _watch_file_worker(self, source, rule, key):
-        try:
-            self.process_stable_file(source, rule, claimed=True)
-        finally:
-            with self._active_files_lock:
-                self._active_files.discard(key)
-
-    def process_stable_file(self, source, rule, claimed=False):
-        source = Path(source)
-        key = os.path.normcase(str(source.resolve()))
-        if not claimed:
-            with self._active_files_lock:
-                if key in self._active_files:
-                    return None
-                self._active_files.add(key)
-        try:
-            if not self.wait_until_stable(source):
-                if source.exists():
-                    self.log(f"Error: file did not finish writing: {source}")
-                    return False
-                return None
-            with self._move_lock:
-                if not source.is_file():
-                    return None
-                destination = move_incoming_file(source, rule)
-            self.log(f"Processed: {source.name} -> {destination}")
-            return True
-        except (OSError, ValueError, KeyError) as error:
-            self.log(f"Error processing {source}: {error}")
-            return False
-        finally:
-            with self._active_files_lock:
-                self._active_files.discard(key)
-
-    @staticmethod
-    def wait_until_stable(source, timeout=300, interval=0.5, stable_checks=5):
-        deadline = time.monotonic() + timeout
-        previous_size = None
-        stable_count = 0
-        while time.monotonic() < deadline:
-            try:
-                stat = source.stat()
-                signature = (stat.st_size, stat.st_mtime_ns)
-            except OSError:
-                return False
-            if signature == previous_size:
-                stable_count += 1
-                if stable_count >= stable_checks:
-                    return True
-            else:
-                previous_size = signature
-                stable_count = 0
-            time.sleep(interval)
-        return False
 
     def log(self, message):
         self._log_queue.put(f"[{datetime.now():%H:%M:%S}] {message}")

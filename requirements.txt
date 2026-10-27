@@ -3,16 +3,18 @@
 
 customtkinter==5.2.2       # every window; the theme is built for this version
 certifi>=2024.2.2,<2027    # trusted CA certificates for HTTPS update checks
-tkinterdnd2>=0.6.4,<1      # drag and drop for Bin Sync
+tkinterdnd2>=0.6.4,<1      # drag and drop for Bin Distributer and Batch Renamer
 Pillow>=10.0,<13           # icons and thumbnails
 opencv-python>=4.8,<6      # Media Browser, Proxy Generator
 pandas>=2.0,<4             # EDL/ALE/XML Converter
 openpyxl>=3.1,<4           # EDL/ALE/XML Converter's Excel export
+python-docx>=1.1,<2        # Music Cue Sheet's Word output
 matplotlib>=3.8,<4         # Storage Monitor charts
 psutil>=5.9,<8             # Storage Monitor
 chardet>=5.0,<8            # Subtitle to Markers
 schedule>=1.2,<2           # Project Backup
-watchdog>=4.0,<7           # Watch Folder Sorter
+pystray>=0.19,<1           # tray icon that keeps Auto Ingest and Project Backup running after Auto AE closes
+watchdog>=4.0,<7           # Auto Ingest
 PyMuPDF>=1.24,<2             # PDF Pages to Images
 
 # Optional: the app runs without these, but these features need them

@@ -82,10 +82,12 @@ _NEUTRAL_TILE = {"icon": "wrench", "fg": C["text_muted"], "bg": C["surface_2"]}
 # (BaseTool already has an `icon` attribute - put an icon name there).
 DEFAULT_TOOL_META = {
     "Batch Renamer":                ("Media", "pencil-line"),
-    "Bin Sync":                     ("Editorial & Turnover", "folder-sync"),
+    "Bin Distributer":              ("Editorial & Turnover", "folder-sync"),
     "Consolidate Media":            ("Editorial & Turnover", "combine"),
     "Drive Comparison":             ("Storage & Backup", "git-compare-arrows"),
     "EDL/ALE/XML Converter":        ("Editorial & Turnover", "list-video"),
+    "EDL Reports":                  ("Editorial & Turnover", "list-video"),
+    "Music Cue Sheet":              ("Editorial & Turnover", "audio-lines"),
     "File Converter":               ("Media", "arrow-right-left"),
     "Folder Creator":               ("Project Setup", "folder-tree"),
     "Installers":                   ("Project Setup", "download"),
@@ -96,7 +98,7 @@ DEFAULT_TOOL_META = {
     "Subtitle to Markers":          ("Editorial & Turnover", "captions"),
     "Setup Kit":                    ("Project Setup", "keyboard"),
     "Timecode Calculator":          ("Editorial & Turnover", "timer"),
-    "Watch Folder Sorter":          ("Media", "folder-input"),
+    "Auto Ingest":          ("Media", "folder-input"),
 }
 
 
@@ -287,8 +289,33 @@ def set_app_icon(window):
     match_titlebar(window)
 
 
+def _windows_titlebar(window):
+    try:
+        if not window.winfo_exists():
+            return
+        import ctypes
+        window.update_idletasks()
+        hwnd = ctypes.windll.user32.GetParent(window.winfo_id()) or window.winfo_id()
+        value = ctypes.c_int(1 if ctk.get_appearance_mode() == "Dark" else 0)
+        # 20 = DWMWA_USE_IMMERSIVE_DARK_MODE (19 on early Windows 10 builds)
+        for attribute in (20, 19):
+            if ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, attribute, ctypes.byref(value), 4) == 0:
+                break
+    except (tk.TclError, AttributeError, OSError):
+        pass
+
+
 def match_titlebar(window):
-    """Mac: macOS draws the title bar, so tell it when Light or Dark is picked instead of System."""
+    """Match the native title bar to Light or Dark (macOS appearance, Windows immersive dark mode)."""
+    if IS_WINDOWS:
+        _windows_titlebar(window)
+        # CustomTkinter recolors Toplevel title bars on its own timer and can lose the race, so repeat.
+        for delay in (150, 400, 900):
+            try:
+                window.after(delay, lambda: _windows_titlebar(window))
+            except tk.TclError:
+                break
+        return
     if not IS_MAC:
         return
     if ctk.AppearanceModeTracker.appearance_mode_set_by == "system":

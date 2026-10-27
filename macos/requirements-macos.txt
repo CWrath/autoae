@@ -8,6 +8,7 @@ pillow>=10.0,<13
 numpy>=1.26,<3
 pandas>=2.0,<4
 openpyxl>=3.1,<4
+python-docx>=1.1,<2
 matplotlib>=3.8,<4
 opencv-python-headless>=4.8,<6
 psutil>=5.9,<8
@@ -16,7 +17,8 @@ chardet>=5.0,<8
 
 # --- optional ---
 # Installed one at a time. If one can't be installed, only the tool that uses it is affected.
-watchdog>=4.0,<7      # Watch Folder Sorter
+watchdog>=4.0,<7      # Auto Ingest
+pystray>=0.19,<1      # menu bar icon that keeps Auto Ingest and Project Backup running after Auto AE closes
 pymediainfo>=6.0      # Media Browser metadata panel
 pygame>=2.5           # Media Browser audio playback
 keyring>=24           # Task Board passwords + Microsoft sign-in in the macOS Keychain

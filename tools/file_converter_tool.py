@@ -9,6 +9,7 @@ from PIL import Image, UnidentifiedImageError
 from tkinter import filedialog, messagebox
 
 from base_tool import BaseTool
+from drag_drop import enable_path_drop
 import theme
 from ffmpeg_setup import configure_ffmpeg
 
@@ -68,8 +69,24 @@ class Tool(BaseTool):
         self.log_box = theme.LogBox(log_card.body, wrap="word")
         self.log_box.pack(fill="both", expand=True)
 
-        self.log("Ready. Select a file or folder, choose an output format, and convert.")
+        self.log("Ready. Select or drag in a file or folder, choose an output format, and convert.")
+        enable_path_drop(window, self.source_entry, self.drop_source, settings)
+        enable_path_drop(window, self.output_entry, self.drop_output)
         return window
+
+    def drop_source(self, paths):
+        self.source_entry.delete(0, tk.END)
+        self.source_entry.insert(0, paths[0])
+        if len(paths) > 1:
+            self.log("Only one source can be converted at a time; using the first item dropped.")
+
+    def drop_output(self, paths):
+        folder = next((p for p in paths if os.path.isdir(p)), None)
+        if folder is None:
+            self.log("Drop a folder to use as the output location.")
+            return
+        self.output_entry.delete(0, tk.END)
+        self.output_entry.insert(0, folder)
 
     def clear_fields(self):
         self.source_entry.delete(0, tk.END)

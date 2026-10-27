@@ -68,6 +68,8 @@ def main():
         "--collect-all", "customtkinter",
         "--collect-all", "tkinterdnd2",
         "--collect-all", "pymupdf",
+        "--collect-all", "docx",
+        "--collect-submodules", "pystray",
         "--add-data", f"{ROOT / 'assets'};assets",
         "--add-data", f"{ROOT / 'autoae_theme.json'};.",
         "--add-data", f"{ROOT / 'foldertemplates'};foldertemplates",

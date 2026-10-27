@@ -9,6 +9,7 @@ from tkinter import messagebox
 import customtkinter as ctk
 
 import app_updater
+import background_services
 from app_version import APP_VERSION
 import theme
 from theme import C, font
@@ -651,6 +652,14 @@ if __name__ == "__main__":
     tools_path = os.path.join(os.path.dirname(__file__), 'tools')
     if tools_path not in sys.path:
         sys.path.insert(0, tools_path)
+
+    if "--tray" in sys.argv:
+        import tray_agent
+        sys.exit(tray_agent.main())
+
+    # Held while the app is open so the tray icon knows whether to start another copy
+    app_lock = background_services.PortLock(background_services.APP_PORT)
+    app_lock.acquire()
 
     app = AutoAE()
     app.mainloop()

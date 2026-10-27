@@ -7,6 +7,7 @@ from tkinter import filedialog
 import customtkinter as ctk
 
 from base_tool import BaseTool
+from drag_drop import enable_path_drop
 import theme
 
 
@@ -131,8 +132,26 @@ class Tool(BaseTool):
         log_card.pack(fill="both", expand=True, pady=(14, 0))
         self.log_box = theme.LogBox(log_card.body, wrap="word")
         self.log_box.pack(fill="both", expand=True)
-        self.log("Ready. Choose a PDF and export its pages as images.")
+        self.log("Ready. Choose or drag in a PDF and export its pages as images.")
+        enable_path_drop(window, self.pdf_entry, self.drop_pdf, settings)
+        enable_path_drop(window, self.output_entry, self.drop_output)
         return window
+
+    def drop_pdf(self, paths):
+        pdf = next((p for p in paths if os.path.isfile(p) and p.lower().endswith(".pdf")), None)
+        if pdf is None:
+            self.log("Drop a .pdf file to export its pages.")
+            return
+        self.pdf_entry.delete(0, tk.END)
+        self.pdf_entry.insert(0, pdf)
+
+    def drop_output(self, paths):
+        folder = next((p for p in paths if os.path.isdir(p)), None)
+        if folder is None:
+            self.log("Drop a folder to use as the output location.")
+            return
+        self.output_entry.delete(0, tk.END)
+        self.output_entry.insert(0, folder)
 
     def browse_pdf(self):
         pdf_path = filedialog.askopenfilename(

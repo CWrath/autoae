@@ -15,7 +15,7 @@ from theme import C
 
 
 def _data_dir():
-    """Folder for Bin Sync's recent paths and presets (Application Support on a Mac)."""
+    """Folder for Bin Distributer's recent paths and presets (Application Support on a Mac)."""
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "AUTO_AE"
     return Path(os.environ.get("LOCALAPPDATA", Path.home())) / "AUTO_AE"
@@ -158,7 +158,7 @@ def initialize_drag_and_drop(window):
 class Tool(BaseTool):
     def __init__(self):
         super().__init__()
-        self.name = "Bin Sync"
+        self.name = "Bin Distributer"
         self.description = "Copy multiple Avid .avb bins to multiple locations"
         self.category = "Editorial & Turnover"
         self.icon = "folder-sync"
@@ -168,7 +168,7 @@ class Tool(BaseTool):
         self.presets = load_presets()
 
     def create_window(self, parent):
-        window = self.create_tool_window(parent, "Bin Sync", 780, 690)
+        window = self.create_tool_window(parent, "Bin Distributer", 780, 690)
         initialize_drag_and_drop(window)
         window.minsize(680, 600)
 
@@ -565,9 +565,9 @@ class Tool(BaseTool):
                 for source, destination, error in failed
             )
             messagebox.showwarning(
-                "Bin sync completed with errors",
+                "Bin distribution completed with errors",
                 f"{message}\n\nFailed copies:\n{details}",
             )
         else:
-            messagebox.showinfo("Bin sync complete", message)
+            messagebox.showinfo("Bin distribution complete", message)
             self.clear_sync_inputs()

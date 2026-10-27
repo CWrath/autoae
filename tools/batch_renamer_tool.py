@@ -8,6 +8,7 @@ from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
 import customtkinter as ctk
+from tkinterdnd2 import COPY, DND_FILES, TkinterDnD
 
 import error_help
 import theme
@@ -461,6 +462,7 @@ class Tool(BaseTool):
         self.tree.bind("<Delete>", lambda e: self.remove_selected())
         self.tree.bind("<BackSpace>", lambda e: self.remove_selected())
         self.files_listbox = _FilesView(self)
+        self.enable_file_drop(window, files_card)
         ctk.AppearanceModeTracker.add(self._retint_table, self.tree)
         self.tree.bind("<Destroy>", lambda e: e.widget is self.tree and
                        ctk.AppearanceModeTracker.remove(self._retint_table), add="+")
@@ -838,17 +840,45 @@ class Tool(BaseTool):
         if file_paths:
             self.add_paths(list(file_paths))
 
+    def enable_file_drop(self, window, *targets):
+        """Accept files and folders dropped onto the file list."""
+        try:
+            TkinterDnD._require(window)
+            for widget in (self.tree, *targets):
+                widget.drop_target_register(DND_FILES)
+                widget.dnd_bind("<<Drop>>", self.handle_drop)
+        except (RuntimeError, tk.TclError, AttributeError):
+            pass    # drag and drop is optional; the Add buttons still work
+
+    def handle_drop(self, event):
+        paths = []
+        for dropped in self.tree.tk.splitlist(event.data):
+            if os.path.isdir(dropped):
+                paths.extend(self.folder_files(dropped))
+            else:
+                paths.append(dropped)
+        self.add_paths(list(dict.fromkeys(paths)))
+        return COPY
+
+    @staticmethod
+    def folder_files(folder):
+        try:
+            names = os.listdir(folder)
+        except OSError:
+            return []
+        return [os.path.join(folder, n) for n in names
+                if not n.startswith(".") and not n.startswith("._")]
+
     def open_folder(self):
         folder = filedialog.askdirectory(title="Add every file in a folder", parent=self.window)
         if folder:
             try:
-                names = os.listdir(folder)
+                os.listdir(folder)
             except OSError as exc:
                 messagebox.showerror("Batch Renamer", error_help.explain(exc, folder, "read the folder"),
                                      parent=self.window)
                 return
-            self.add_paths([os.path.join(folder, n) for n in names
-                            if not n.startswith(".") and not n.startswith("._")])
+            self.add_paths(self.folder_files(folder))
 
     def remove_selected(self):
         drop = {int(iid) for iid in self.tree.selection()}
