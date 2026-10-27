@@ -3,6 +3,7 @@ import os
 import queue
 import shutil
 import sys
+import subprocess
 import threading
 import time
 import uuid
@@ -20,7 +21,9 @@ import error_help
 import theme
 from base_tool import BaseTool
 from theme import C
-from tools.batch_renamer_tool import DATE_FORMATS, JOINERS, TokenFlow, chip_label, smart_join
+from tools.batch_renamer_tool import (
+    DATE_FORMATS, JOINERS, TokenFlow, _int, _pad, chip_label, smart_join,
+)
 
 
 def _data_dir():
@@ -34,6 +37,7 @@ TOKEN_LABELS = {
     "original": "Original name",
     "folder": "Watch folder",
     "date": "Date received",
+    "counter": "Counter",
     "text": "Custom text",
 }
 PATH_BREAKING_CHARS = set(error_help.WINDOWS_BAD_CHARS)
@@ -62,6 +66,9 @@ def new_rule():
         "destination_folder": "",
         "layout": [{"kind": "original"}],
         "join": "_",
+        "counter_start": "1",
+        "counter_step": "1",
+        "counter_digits": "4",
         "date_format": "YYMMDD",
         "remove_path_breaking_chars": False,
         "uppercase_original": False,
@@ -86,7 +93,8 @@ def load_rules(path=RULES_FILE):
             key: item[key]
             for key in (
                 "id", "name", "watch_folder", "destination_folder", "layout", "join",
-                "date_format", "remove_path_breaking_chars", "uppercase_original",
+                "counter_start", "counter_step", "counter_digits", "date_format",
+                "remove_path_breaking_chars", "uppercase_original",
                 "skip_existing_tokens",
             )
             if key in item
@@ -140,7 +148,14 @@ def save_rules(rules, path=RULES_FILE, saved_tokens=None):
         raise
 
 
-def build_output_path(source_path, rule, received_at=None):
+def _existing_file_count(root):
+    root = Path(root)
+    if not root.is_dir():
+        return 0
+    return sum(1 for path in root.rglob("*") if path.is_file())
+
+
+def build_output_path(source_path, rule, received_at=None, counter_index=None):
     source = Path(source_path)
     watch_folder = Path(rule["watch_folder"]).resolve()
     try:
@@ -151,6 +166,10 @@ def build_output_path(source_path, rule, received_at=None):
     received_at = received_at or datetime.now()
     date_format = DATE_FORMATS.get(rule.get("date_format"), DATE_FORMATS["YYMMDD"])
     date_text = received_at.strftime(date_format)
+    layout = rule.get("layout", [])
+    has_counter = any(token.get("kind") == "counter" for token in layout)
+    if has_counter and counter_index is None:
+        counter_index = _existing_file_count(Path(rule["destination_folder"]) / date_text)
     values = {
         "original": clean_original_name(
             source.stem,
@@ -159,10 +178,16 @@ def build_output_path(source_path, rule, received_at=None):
         ),
         "folder": watch_folder.name,
         "date": date_text,
+        "counter": _pad(
+            _int(rule.get("counter_start"), 1)
+            + _int(rule.get("counter_step"), 1) * (counter_index or 0),
+            rule.get("counter_digits", "4"),
+            1,
+        ),
     }
     original_folded = source.stem.casefold()
     parts = []
-    for token in rule.get("layout", []):
+    for token in layout:
         kind = token.get("kind")
         if kind == "text":
             value = str(token.get("text", ""))
@@ -172,7 +197,7 @@ def build_output_path(source_path, rule, received_at=None):
             raise ValueError(f"Unknown name token: {kind!r}")
         if (
             rule.get("skip_existing_tokens", True)
-            and kind != "original"
+            and kind not in ("original", "counter")
             and value
             and value.casefold() in original_folded
         ):
@@ -208,15 +233,28 @@ def available_destination(path):
         counter += 1
 
 
-def move_incoming_file(source_path, rule, received_at=None):
+def move_incoming_file(source_path, rule, received_at=None, counter_index=None):
     source = Path(source_path)
     if not source.is_file():
         raise FileNotFoundError(f"Incoming media file not found: {source}")
-    destination = build_output_path(source, rule, received_at)
+    destination = build_output_path(source, rule, received_at, counter_index)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination = available_destination(destination)
     shutil.move(str(source), str(destination))
     return destination
+
+
+def open_destination_folder(path):
+    folder = str(Path(path))
+    if sys.platform == "win32":
+        os.startfile(folder)
+    elif sys.platform == "darwin":
+        subprocess.Popen(["open", folder])
+    else:
+        opener = shutil.which("xdg-open")
+        if opener is None:
+            raise FileNotFoundError("Could not find xdg-open to open the destination folder.")
+        subprocess.Popen([opener, folder])
 
 
 def validate_rules(rules):
@@ -258,6 +296,14 @@ def validate_rules(rules):
             for token in layout
         ):
             errors.append(f"{name or 'Rule'}: the filename pattern contains an invalid token.")
+        elif any(token.get("kind") == "counter" for token in layout):
+            for key, label in (("counter_start", "start value"), ("counter_step", "increment")):
+                try:
+                    int(str(rule.get(key, "1")).strip())
+                except (TypeError, ValueError):
+                    errors.append(f"{name or 'Rule'}: counter {label} must be an integer.")
+            if str(rule.get("counter_digits", "4")) not in {str(value) for value in range(1, 9)}:
+                errors.append(f"{name or 'Rule'}: choose a counter width from 1 to 8 digits.")
 
     for index, (name, first) in enumerate(watch_roots):
         for other_name, second in watch_roots[index + 1:]:
@@ -298,6 +344,7 @@ class IngestEngine:
         self._active_files = set()
         self._active_files_lock = threading.Lock()
         self._move_lock = threading.Lock()
+        self._counter_counts = {}
 
     def log(self, message):
         print(message)
@@ -347,7 +394,7 @@ class IngestEngine:
             with self._active_files_lock:
                 self._active_files.discard(key)
 
-    def process_stable_file(self, source, rule, claimed=False):
+    def process_stable_file(self, source, rule, claimed=False, on_processed=None):
         source = Path(source)
         key = os.path.normcase(str(source.resolve()))
         if not claimed:
@@ -364,7 +411,21 @@ class IngestEngine:
             with self._move_lock:
                 if not source.is_file():
                     return None
-                destination = move_incoming_file(source, rule)
+                received_at = datetime.now()
+                counter_index = None
+                counter_key = None
+                if any(token.get("kind") == "counter" for token in rule.get("layout", [])):
+                    date_format = DATE_FORMATS.get(rule.get("date_format"), DATE_FORMATS["YYMMDD"])
+                    counter_root = Path(rule["destination_folder"]) / received_at.strftime(date_format)
+                    counter_key = os.path.normcase(str(counter_root.resolve()))
+                    if counter_key not in self._counter_counts:
+                        self._counter_counts[counter_key] = _existing_file_count(counter_root)
+                    counter_index = self._counter_counts[counter_key]
+                destination = move_incoming_file(source, rule, received_at, counter_index)
+                if counter_key is not None:
+                    self._counter_counts[counter_key] += 1
+            if on_processed is not None:
+                on_processed(destination)
             self.log(f"Processed: {source.name} -> {destination}")
             return True
         except (OSError, ValueError, KeyError) as error:
@@ -502,7 +563,7 @@ class Tool(IngestEngine, BaseTool):
         naming_card = theme.Card(
             editor,
             title="Filename builder",
-            subtitle="Add and arrange tokens. The original file extension is kept automatically.",
+            subtitle="Add and arrange tokens. Counters continue from files already routed in each date folder.",
         )
         naming_card.grid(row=4, column=0, sticky="ew", pady=(12, 0))
         naming = naming_card.body
@@ -555,6 +616,24 @@ class Tool(IngestEngine, BaseTool):
             date_row, "Destination: [date] / [original subfolders] / renamed file", role="caption",
         ).pack(side="left", padx=(12, 0))
 
+        counter_row = ctk.CTkFrame(naming, fg_color="transparent")
+        counter_row.grid(row=4, column=0, sticky="w", pady=(9, 0))
+        theme.muted(counter_row, "Counter", role="body").pack(side="left", padx=(0, 10))
+        theme.muted(counter_row, "Start", role="caption").pack(side="left", padx=(0, 4))
+        self.counter_start_entry = ctk.CTkEntry(counter_row, width=70, height=30)
+        self.counter_start_entry.pack(side="left", padx=(0, 10))
+        self.counter_start_entry.bind("<KeyRelease>", self.mark_dirty)
+        theme.muted(counter_row, "Increment", role="caption").pack(side="left", padx=(0, 4))
+        self.counter_step_entry = ctk.CTkEntry(counter_row, width=70, height=30)
+        self.counter_step_entry.pack(side="left", padx=(0, 10))
+        self.counter_step_entry.bind("<KeyRelease>", self.mark_dirty)
+        theme.muted(counter_row, "Digits", role="caption").pack(side="left", padx=(0, 4))
+        self.counter_digits_menu = ctk.CTkOptionMenu(
+            counter_row, values=[str(value) for value in range(1, 9)], width=70, height=30,
+            command=self.mark_dirty,
+        )
+        self.counter_digits_menu.pack(side="left")
+
         self.remove_path_chars_var = tk.BooleanVar(value=False)
         ctk.CTkCheckBox(
             naming,
@@ -563,7 +642,7 @@ class Tool(IngestEngine, BaseTool):
             checkbox_width=18,
             checkbox_height=18,
             command=self.mark_dirty,
-        ).grid(row=4, column=0, sticky="w", pady=(8, 0))
+        ).grid(row=5, column=0, sticky="w", pady=(8, 0))
         self.uppercase_original_var = tk.BooleanVar(value=False)
         ctk.CTkCheckBox(
             naming,
@@ -572,7 +651,7 @@ class Tool(IngestEngine, BaseTool):
             checkbox_width=18,
             checkbox_height=18,
             command=self.mark_dirty,
-        ).grid(row=5, column=0, sticky="w", pady=(4, 0))
+        ).grid(row=6, column=0, sticky="w", pady=(4, 0))
         self.skip_existing_tokens_var = tk.BooleanVar(value=True)
         ctk.CTkCheckBox(
             naming,
@@ -581,10 +660,10 @@ class Tool(IngestEngine, BaseTool):
             checkbox_width=18,
             checkbox_height=18,
             command=self.mark_dirty,
-        ).grid(row=6, column=0, sticky="w", pady=(4, 0))
+        ).grid(row=7, column=0, sticky="w", pady=(4, 0))
 
         preview_frame = ctk.CTkFrame(naming, fg_color="transparent")
-        preview_frame.grid(row=7, column=0, sticky="ew", pady=(8, 0))
+        preview_frame.grid(row=8, column=0, sticky="ew", pady=(8, 0))
         self.preview_label = theme.muted(
             preview_frame, "Preview: select or add tokens", role="caption",
         )
@@ -693,6 +772,11 @@ class Tool(IngestEngine, BaseTool):
             entry.insert(0, value)
         self.join_menu.set(rule.get("join", "_"))
         self.date_format_menu.set(rule.get("date_format", "YYMMDD"))
+        self.counter_start_entry.delete(0, tk.END)
+        self.counter_start_entry.insert(0, str(rule.get("counter_start", "1")))
+        self.counter_step_entry.delete(0, tk.END)
+        self.counter_step_entry.insert(0, str(rule.get("counter_step", "1")))
+        self.counter_digits_menu.set(str(rule.get("counter_digits", "4")))
         self.remove_path_chars_var.set(rule.get("remove_path_breaking_chars", False))
         self.uppercase_original_var.set(rule.get("uppercase_original", False))
         self.skip_existing_tokens_var.set(rule.get("skip_existing_tokens", True))
@@ -761,6 +845,9 @@ class Tool(IngestEngine, BaseTool):
             "destination_folder": self.destination_entry.get().strip(),
             "layout": [dict(token) for token in self._layout],
             "join": self.join_menu.get(),
+            "counter_start": self.counter_start_entry.get().strip(),
+            "counter_step": self.counter_step_entry.get().strip(),
+            "counter_digits": self.counter_digits_menu.get(),
             "date_format": self.date_format_menu.get(),
             "remove_path_breaking_chars": self.remove_path_chars_var.get(),
             "uppercase_original": self.uppercase_original_var.get(),
@@ -860,7 +947,7 @@ class Tool(IngestEngine, BaseTool):
     def render_palette(self):
         chips = [
             self.make_token_chip(self.palette, {"kind": kind}, palette=True)
-            for kind in ("original", "folder", "date")
+            for kind in ("original", "folder", "date", "counter")
         ]
         chips.extend(
             self.make_token_chip(
@@ -1013,6 +1100,13 @@ class Tool(IngestEngine, BaseTool):
             "date": datetime.now().strftime(DATE_FORMATS.get(
                 self.date_format_menu.get(), DATE_FORMATS["YYMMDD"]
             )) if hasattr(self, "date_format_menu") else datetime.now().strftime("%y%m%d"),
+            "counter": _pad(
+                _int(self.counter_start_entry.get(), 1)
+                if hasattr(self, "counter_start_entry") else 1,
+                self.counter_digits_menu.get()
+                if hasattr(self, "counter_digits_menu") else "4",
+                1,
+            ),
         }
         parts = [
             token.get("text", "") if token.get("kind") == "text"
@@ -1023,7 +1117,7 @@ class Tool(IngestEngine, BaseTool):
             original = values["original"].casefold()
             parts = [
                 part for token, part in zip(getattr(self, "_layout", []), parts)
-                if token.get("kind") == "original"
+                if token.get("kind") in ("original", "counter")
                 or not part
                 or part.casefold() not in original
             ]
@@ -1031,7 +1125,10 @@ class Tool(IngestEngine, BaseTool):
         stem = smart_join(parts, joiner)
         if getattr(self, "remove_path_chars_var", None) and self.remove_path_chars_var.get():
             stem = sanitize_path_breaking_chars(stem)
-        self.preview_label.configure(text=f"Preview: {stem}.mov")
+        prefix = "Preview (counter example):" if any(
+            token.get("kind") == "counter" for token in getattr(self, "_layout", [])
+        ) else "Preview:"
+        self.preview_label.configure(text=f"{prefix} {stem}.mov")
 
     def validate_for_run(self):
         if getattr(self, "_rule_dirty", False) and not self.save_current_rule():
@@ -1135,6 +1232,12 @@ class Tool(IngestEngine, BaseTool):
     def _run_now_worker(self, rules):
         processed = 0
         failed = 0
+        last_destination = None
+
+        def remember_destination(destination):
+            nonlocal last_destination
+            last_destination = destination
+
         try:
             for rule in rules:
                 try:
@@ -1148,12 +1251,17 @@ class Tool(IngestEngine, BaseTool):
                     continue
                 self.log(f"{rule['name']}: found {len(files)} file(s).")
                 for source in files:
-                    result = self.process_stable_file(source, rule)
+                    result = self.process_stable_file(source, rule, on_processed=remember_destination)
                     if result is True:
                         processed += 1
                     elif result is False:
                         failed += 1
             self.log(f"Run Now finished: {processed} file(s) moved, {failed} error(s).")
+            if last_destination is not None:
+                try:
+                    open_destination_folder(last_destination.parent)
+                except OSError as error:
+                    self.log(f"Error opening destination folder {last_destination.parent}: {error}")
         finally:
             self._batch_running = False
 

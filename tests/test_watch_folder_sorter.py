@@ -3,6 +3,7 @@ import time
 import unittest
 from datetime import datetime
 from pathlib import Path
+from unittest import mock
 
 from tools.watch_folder_sorter import (
     Tool,
@@ -129,6 +130,71 @@ class WatchFolderSorterTests(unittest.TestCase):
 
         self.assertEqual(target.name, "ftg_261022_clip.mov")
 
+    def test_counter_continues_from_files_in_the_date_folder(self):
+        source = self.watch / "Camera A" / "clip.mov"
+        self.rule.update({
+            "layout": [{"kind": "counter"}, {"kind": "original"}],
+            "counter_start": "5",
+            "counter_step": "2",
+            "counter_digits": "3",
+        })
+        date_folder = self.destination / "261022"
+        (date_folder / "Camera B").mkdir(parents=True)
+        (date_folder / "previous-a.mov").write_bytes(b"existing")
+        (date_folder / "Camera B" / "previous-b.mov").write_bytes(b"existing")
+
+        target = build_output_path(source, self.rule, datetime(2026, 10, 22))
+
+        self.assertEqual(target.name, "009_clip.mov")
+
+    def test_counter_is_not_skipped_when_already_in_original_name(self):
+        source = self.watch / "Camera A" / "clip_0001.mov"
+        self.rule["layout"] = [{"kind": "original"}, {"kind": "counter"}]
+
+        target = build_output_path(source, self.rule, datetime(2026, 10, 22))
+
+        self.assertEqual(target.name, "clip_0001_0001.mov")
+
+    def test_engine_counter_continues_during_and_after_a_restart(self):
+        self.rule.update({
+            "layout": [{"kind": "counter"}, {"kind": "original"}],
+            "counter_start": "4",
+            "counter_step": "2",
+            "counter_digits": "3",
+        })
+        first_tool = Tool()
+        first_tool.wait_until_stable = lambda *_args, **_kwargs: True
+
+        for filename, expected in (("first.mov", "004_first.mov"), ("second.mov", "006_second.mov")):
+            source = self.watch / "Camera A" / filename
+            source.write_bytes(b"media")
+            self.assertTrue(first_tool.process_stable_file(source, self.rule))
+            self.assertTrue((self.destination / datetime.now().strftime("%y%m%d") / "Camera A" / expected).is_file())
+
+        restarted_tool = Tool()
+        restarted_tool.wait_until_stable = lambda *_args, **_kwargs: True
+        source = self.watch / "Camera A" / "third.mov"
+        source.write_bytes(b"media")
+
+        self.assertTrue(restarted_tool.process_stable_file(source, self.rule))
+        self.assertTrue(
+            (self.destination / datetime.now().strftime("%y%m%d") / "Camera A" / "008_third.mov").is_file()
+        )
+
+    def test_run_now_opens_the_folder_of_the_last_transferred_file(self):
+        source = self.watch / "Camera A" / "clip.mov"
+        source.write_bytes(b"media")
+        tool = Tool()
+        tool.wait_until_stable = lambda *_args, **_kwargs: True
+
+        with mock.patch("tools.watch_folder_sorter.open_destination_folder") as open_folder:
+            tool._run_now_worker([self.rule])
+
+        open_folder.assert_called_once_with(
+            self.destination / datetime.now().strftime("%y%m%d") / "Camera A"
+        )
+        self.assertFalse(tool._batch_running)
+
     def test_custom_token_requires_exact_substring_match(self):
         source = self.watch / "Camera A" / "clip_GFX_final.mov"
         self.rule["layout"] = [
@@ -190,6 +256,17 @@ class WatchFolderSorterTests(unittest.TestCase):
 
         self.assertFalse(loaded["remove_path_breaking_chars"])
         self.assertFalse(loaded["uppercase_original"])
+        self.assertEqual(loaded["counter_start"], "1")
+        self.assertEqual(loaded["counter_step"], "1")
+        self.assertEqual(loaded["counter_digits"], "4")
+
+    def test_validate_rules_rejects_invalid_counter_settings(self):
+        self.rule["layout"] = [{"kind": "counter"}]
+        self.rule["counter_start"] = "first"
+
+        errors = validate_rules([self.rule])
+
+        self.assertTrue(any("counter start value must be an integer" in error for error in errors))
 
     def test_saved_custom_tokens_are_kept_when_rules_are_saved_again(self):
         settings = self.root / "settings.json"
