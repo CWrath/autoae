@@ -42,6 +42,76 @@ TOKEN_LABELS = {
 }
 PATH_BREAKING_CHARS = set(error_help.WINDOWS_BAD_CHARS)
 
+CONVERT_OFF = "Off"
+CONVERT_CHOICES = {
+    "audio": [CONVERT_OFF, "wav", "mp3", "flac", "aac", "m4a", "ogg"],
+    "video": [CONVERT_OFF, "mp4", "mov", "mkv", "m4v"],
+    "image": [CONVERT_OFF, "png", "jpg", "webp", "tif", "bmp"],
+}
+SOURCE_EXTENSIONS = {
+    "audio": {".mp3", ".wav", ".aac", ".flac", ".ogg", ".m4a", ".aif", ".aiff", ".wma", ".opus"},
+    "video": {".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".webm", ".m4v", ".mxf", ".mts", ".m2ts"},
+    "image": {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".tif", ".tiff"},
+}
+AUDIO_CODECS = {
+    "mp3": "libmp3lame", "wav": "pcm_s16le", "aac": "aac", "flac": "flac", "ogg": "libvorbis", "m4a": "aac",
+}
+IMAGE_FORMATS = {"jpg": "JPEG", "png": "PNG", "webp": "WEBP", "bmp": "BMP", "tif": "TIFF"}
+
+
+def conversion_target(source_path, rule):
+    """The extension (with dot) this file should be converted to under the rule, or None to just move it."""
+    suffix = Path(source_path).suffix.lower()
+    for category, extensions in SOURCE_EXTENSIONS.items():
+        if suffix in extensions:
+            target = str(rule.get(f"convert_{category}", CONVERT_OFF) or CONVERT_OFF).lower()
+            if target == CONVERT_OFF.lower() or target not in CONVERT_CHOICES[category]:
+                return None
+            if "." + target == suffix or (target == "jpg" and suffix == ".jpeg") or (target == "tif" and suffix == ".tiff"):
+                return None
+            return "." + target
+    return None
+
+
+def convert_file(source_path, destination_path):
+    """Convert one audio, video or image file. Raises RuntimeError if it fails; no partial file is left behind."""
+    source, destination = Path(source_path), Path(destination_path)
+    category = next(name for name, exts in SOURCE_EXTENSIONS.items() if source.suffix.lower() in exts)
+    target = destination.suffix.lower().lstrip(".")
+    try:
+        if category == "image":
+            from PIL import Image
+            with Image.open(source) as image:
+                if target in ("jpg", "bmp") or image.mode not in ("RGB", "RGBA", "L", "CMYK"):
+                    image = image.convert("RGB")
+                image.save(destination, format=IMAGE_FORMATS[target])
+            return
+        from ffmpeg_setup import configure_ffmpeg
+        ffmpeg = configure_ffmpeg() or shutil.which("ffmpeg")
+        if not ffmpeg:
+            raise RuntimeError("FFmpeg is not installed. Install it from the FFmpeg status in Auto AE.")
+        if category == "audio":
+            command = [str(ffmpeg), "-y", "-i", str(source), "-vn", "-acodec", AUDIO_CODECS[target]]
+            if target != "wav":
+                command += ["-ar", "44100"]
+        else:
+            command = [str(ffmpeg), "-y", "-i", str(source), "-c:v", "libx264", "-preset", "medium",
+                       "-crf", "18", "-c:a", "aac", "-movflags", "+faststart"]
+        command.append(str(destination))
+        options = {"stdin": subprocess.DEVNULL, "capture_output": True}
+        if sys.platform == "win32":
+            options["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
+        result = subprocess.run(command, **options)
+        if result.returncode != 0:
+            tail = result.stderr.decode("utf-8", "replace").strip().splitlines()[-1:] or ["unknown error"]
+            raise RuntimeError(f"FFmpeg could not convert {source.name}: {tail[0]}")
+    except RuntimeError:
+        destination.unlink(missing_ok=True)
+        raise
+    except Exception as error:
+        destination.unlink(missing_ok=True)
+        raise RuntimeError(f"Could not convert {source.name}: {error}") from error
+
 
 def clean_original_name(name, remove_path_breaking_chars=False, uppercase=False):
     if uppercase:
@@ -73,6 +143,10 @@ def new_rule():
         "remove_path_breaking_chars": False,
         "uppercase_original": False,
         "skip_existing_tokens": True,
+        "convert_audio": CONVERT_OFF,
+        "convert_video": CONVERT_OFF,
+        "convert_image": CONVERT_OFF,
+        "convert_keep_originals": True,
     }
 
 
@@ -95,7 +169,8 @@ def load_rules(path=RULES_FILE):
                 "id", "name", "watch_folder", "destination_folder", "layout", "join",
                 "counter_start", "counter_step", "counter_digits", "date_format",
                 "remove_path_breaking_chars", "uppercase_original",
-                "skip_existing_tokens",
+                "skip_existing_tokens", "convert_audio", "convert_video", "convert_image",
+                "convert_keep_originals",
             )
             if key in item
         })
@@ -164,12 +239,13 @@ def build_output_path(source_path, rule, received_at=None, counter_index=None):
         raise ValueError(f"File is outside the watch folder: {source}") from error
 
     received_at = received_at or datetime.now()
+    suffix = conversion_target(source, rule) or source.suffix
     date_format = DATE_FORMATS.get(rule.get("date_format"), DATE_FORMATS["YYMMDD"])
     date_text = received_at.strftime(date_format)
     layout = rule.get("layout", [])
     has_counter = any(token.get("kind") == "counter" for token in layout)
     if has_counter and counter_index is None:
-        counter_index = _existing_file_count(Path(rule["destination_folder"]) / date_text)
+        counter_index = 0
     values = {
         "original": clean_original_name(
             source.stem,
@@ -209,15 +285,15 @@ def build_output_path(source_path, rule, received_at=None, counter_index=None):
         stem = sanitize_path_breaking_chars(stem)
     if not stem.strip():
         raise ValueError("The naming pattern produced an empty file name.")
-    invalid = error_help.name_problems(stem + source.suffix)
+    invalid = error_help.name_problems(stem + suffix)
     if invalid:
-        raise ValueError(f"Invalid generated file name {stem + source.suffix!r}: " + "; ".join(invalid))
+        raise ValueError(f"Invalid generated file name {stem + suffix!r}: " + "; ".join(invalid))
 
     return (
         Path(rule["destination_folder"])
         / date_text
         / relative.parent
-        / f"{stem}{source.suffix}"
+        / f"{stem}{suffix}"
     )
 
 
@@ -240,7 +316,17 @@ def move_incoming_file(source_path, rule, received_at=None, counter_index=None):
     destination = build_output_path(source, rule, received_at, counter_index)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination = available_destination(destination)
-    shutil.move(str(source), str(destination))
+    if conversion_target(source, rule) is None:
+        shutil.move(str(source), str(destination))
+        return destination
+
+    convert_file(source, destination)
+    if rule.get("convert_keep_originals", True):
+        originals = destination.parent / "Originals"
+        originals.mkdir(exist_ok=True)
+        shutil.move(str(source), str(available_destination(originals / (destination.stem + source.suffix))))
+    else:
+        source.unlink()
     return destination
 
 
@@ -285,6 +371,9 @@ def validate_rules(rules):
 
         if rule.get("date_format") not in DATE_FORMATS:
             errors.append(f"{name or 'Rule'}: choose a valid date format.")
+        for category, choices in CONVERT_CHOICES.items():
+            if rule.get(f"convert_{category}", CONVERT_OFF) not in choices:
+                errors.append(f"{name or 'Rule'}: choose a valid {category} conversion format.")
         if rule.get("join") not in JOINERS:
             errors.append(f"{name or 'Rule'}: choose a valid token separator.")
         layout = rule.get("layout")
@@ -350,6 +439,7 @@ class IngestEngine:
         print(message)
 
     def start_observer(self, rules):
+        self._counter_counts = {}  # each watching session numbers from the rule's start value
         observer = Observer()
         try:
             for rule in rules:
@@ -419,7 +509,7 @@ class IngestEngine:
                     counter_root = Path(rule["destination_folder"]) / received_at.strftime(date_format)
                     counter_key = os.path.normcase(str(counter_root.resolve()))
                     if counter_key not in self._counter_counts:
-                        self._counter_counts[counter_key] = _existing_file_count(counter_root)
+                        self._counter_counts[counter_key] = 0
                     counter_index = self._counter_counts[counter_key]
                 destination = move_incoming_file(source, rule, received_at, counter_index)
                 if counter_key is not None:
@@ -669,6 +759,31 @@ class Tool(IngestEngine, BaseTool):
         )
         self.preview_label.pack(anchor="w")
 
+        convert_row = ctk.CTkFrame(naming, fg_color="transparent")
+        convert_row.grid(row=9, column=0, sticky="w", pady=(12, 0))
+        theme.muted(convert_row, "Convert incoming files", role="body").pack(side="left", padx=(0, 10))
+        self.convert_menus = {}
+        for category, label in (("audio", "Audio to"), ("video", "Video to"), ("image", "Images to")):
+            theme.muted(convert_row, label, role="caption").pack(side="left", padx=(0, 4))
+            menu = ctk.CTkOptionMenu(
+                convert_row, values=CONVERT_CHOICES[category], width=80, height=30, command=self.mark_dirty,
+            )
+            menu.pack(side="left", padx=(0, 10))
+            self.convert_menus[category] = menu
+        self.keep_originals_var = tk.BooleanVar(value=True)
+        ctk.CTkCheckBox(
+            naming,
+            text="Keep the originals in an \"Originals\" folder next to the converted files",
+            variable=self.keep_originals_var,
+            checkbox_width=18,
+            checkbox_height=18,
+            command=self.mark_dirty,
+        ).grid(row=10, column=0, sticky="w", pady=(4, 0))
+        theme.muted(
+            naming, "Files already in the chosen format, and other file types, are moved without conversion.",
+            role="caption",
+        ).grid(row=11, column=0, sticky="w", pady=(2, 0))
+
         save_row = ctk.CTkFrame(editor, fg_color="transparent")
         save_row.grid(row=5, column=0, sticky="ew", pady=(10, 0))
         self.rule_status_label = theme.muted(save_row, "Unsaved changes", role="caption")
@@ -780,7 +895,9 @@ class Tool(IngestEngine, BaseTool):
         self.remove_path_chars_var.set(rule.get("remove_path_breaking_chars", False))
         self.uppercase_original_var.set(rule.get("uppercase_original", False))
         self.skip_existing_tokens_var.set(rule.get("skip_existing_tokens", True))
-        self.refresh_token_list()
+        for category, menu in self.convert_menus.items():
+            menu.set(rule.get(f"convert_{category}", CONVERT_OFF))
+        self.keep_originals_var.set(rule.get("convert_keep_originals", True))
         self.mark_dirty() if unsaved else self.set_clean()
 
     def add_rule(self):
@@ -852,6 +969,8 @@ class Tool(IngestEngine, BaseTool):
             "remove_path_breaking_chars": self.remove_path_chars_var.get(),
             "uppercase_original": self.uppercase_original_var.get(),
             "skip_existing_tokens": self.skip_existing_tokens_var.get(),
+            **{f"convert_{category}": menu.get() for category, menu in self.convert_menus.items()},
+            "convert_keep_originals": self.keep_originals_var.get(),
         })
         if not self.persist_rules():
             return False
@@ -1224,6 +1343,8 @@ class Tool(IngestEngine, BaseTool):
         if rules is None:
             return
         self._batch_running = True
+        with self._move_lock:
+            self._counter_counts = {}  # each Run Now numbers from the rule's start value
         self.log(f"Run Now started: scanning {len(rules)} rule(s).")
         threading.Thread(
             target=self._run_now_worker, args=(rules,), daemon=True,

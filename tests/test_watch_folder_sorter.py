@@ -130,7 +130,7 @@ class WatchFolderSorterTests(unittest.TestCase):
 
         self.assertEqual(target.name, "ftg_261022_clip.mov")
 
-    def test_counter_continues_from_files_in_the_date_folder(self):
+    def test_counter_ignores_files_already_in_the_date_folder(self):
         source = self.watch / "Camera A" / "clip.mov"
         self.rule.update({
             "layout": [{"kind": "counter"}, {"kind": "original"}],
@@ -145,7 +145,7 @@ class WatchFolderSorterTests(unittest.TestCase):
 
         target = build_output_path(source, self.rule, datetime(2026, 10, 22))
 
-        self.assertEqual(target.name, "009_clip.mov")
+        self.assertEqual(target.name, "005_clip.mov")
 
     def test_counter_is_not_skipped_when_already_in_original_name(self):
         source = self.watch / "Camera A" / "clip_0001.mov"
@@ -155,7 +155,7 @@ class WatchFolderSorterTests(unittest.TestCase):
 
         self.assertEqual(target.name, "clip_0001_0001.mov")
 
-    def test_engine_counter_continues_during_and_after_a_restart(self):
+    def test_engine_counter_restarts_from_the_start_value_each_run(self):
         self.rule.update({
             "layout": [{"kind": "counter"}, {"kind": "original"}],
             "counter_start": "4",
@@ -178,8 +178,50 @@ class WatchFolderSorterTests(unittest.TestCase):
 
         self.assertTrue(restarted_tool.process_stable_file(source, self.rule))
         self.assertTrue(
-            (self.destination / datetime.now().strftime("%y%m%d") / "Camera A" / "008_third.mov").is_file()
+            (self.destination / datetime.now().strftime("%y%m%d") / "Camera A" / "004_third.mov").is_file()
         )
+
+    def test_image_is_converted_and_original_kept(self):
+        from PIL import Image
+        source = self.watch / "Camera A" / "still.png"
+        Image.new("RGBA", (4, 4), (255, 0, 0, 128)).save(source)
+        self.rule.update({"layout": [{"kind": "original"}], "convert_image": "jpg"})
+
+        destination = move_incoming_file(source, self.rule, datetime(2026, 10, 22))
+
+        self.assertEqual(destination.name, "still.jpg")
+        with Image.open(destination) as converted:
+            self.assertEqual(converted.format, "JPEG")
+        self.assertFalse(source.exists())
+        self.assertTrue((destination.parent / "Originals" / "still.png").is_file())
+
+    def test_audio_conversion_can_discard_original_and_failure_keeps_it(self):
+        source = self.watch / "Camera A" / "voice.m4a"
+        source.write_bytes(b"audio")
+        self.rule.update({"layout": [{"kind": "original"}], "convert_audio": "wav", "convert_keep_originals": False})
+
+        def fake_convert(src, dst):
+            Path(dst).write_bytes(b"wav")
+
+        with mock.patch("tools.watch_folder_sorter.convert_file", fake_convert):
+            destination = move_incoming_file(source, self.rule, datetime(2026, 10, 22))
+        self.assertEqual(destination.name, "voice.wav")
+        self.assertFalse(source.exists())
+        self.assertFalse((destination.parent / "Originals").exists())
+
+        failing = self.watch / "Camera A" / "bad.m4a"
+        failing.write_bytes(b"audio")
+        with mock.patch("tools.watch_folder_sorter.convert_file", side_effect=RuntimeError("boom")):
+            with self.assertRaises(RuntimeError):
+                move_incoming_file(failing, self.rule, datetime(2026, 10, 22))
+        self.assertTrue(failing.exists())
+
+    def test_files_already_in_target_format_or_other_types_are_just_moved(self):
+        self.rule.update({"layout": [{"kind": "original"}], "convert_audio": "wav"})
+        for name in ("a.wav", "b.pdf"):
+            source = self.watch / "Camera A" / name
+            source.write_bytes(b"x")
+            self.assertEqual(move_incoming_file(source, self.rule, datetime(2026, 10, 22)).name, name)
 
     def test_run_now_opens_the_folder_of_the_last_transferred_file(self):
         source = self.watch / "Camera A" / "clip.mov"
