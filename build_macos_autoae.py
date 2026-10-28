@@ -45,6 +45,11 @@ COLLECT_PACKAGES = (
 )
 
 
+EXCLUDED_MODULES = (
+    "objc", "AppKit", "Foundation", "Quartz", "Cocoa", "CoreFoundation", "PyObjCTools",
+)
+
+
 def collect_app_files():
     files = [name for name in APP_FILES if (ROOT / name).is_file()]
     missing = [name for name in APP_FILES if name not in files]
@@ -116,6 +121,8 @@ def build_app():
         "--specpath", str(WORK),
         "--target-architecture", platform.machine(),
         "--osx-bundle-identifier", BUNDLE_ID,
+        # PyObjC is not used by the app; importing it in a hardened app stalls in libffi
+        *[arg for module in EXCLUDED_MODULES for arg in ("--exclude-module", module)],
         "--hidden-import", "tkinter",
         "--hidden-import", "_tkinter",
         "--hidden-import", "filecmp",

@@ -424,8 +424,13 @@ def launch():
 def run_app():
     """Runs inside the environment: start main.py, and explain failures instead of vanishing."""
     os.chdir(RUN_DIR)
-    sys.path[0] = str(RUN_DIR)
-    sys.argv = [str(RUN_DIR / "main.py")]
+    if getattr(sys, "frozen", False):
+        # sys.path[0] is the frozen runtime's base_library.zip; replacing it breaks stdlib imports
+        sys.path.insert(0, str(RUN_DIR))
+        sys.argv = [str(RUN_DIR / "main.py")] + [a for a in sys.argv[1:] if a != "--run"]
+    else:
+        sys.path[0] = str(RUN_DIR)
+        sys.argv = [str(RUN_DIR / "main.py")]
     if not sys.stdout or not sys.stdout.isatty():
         if APP_LOG.exists():
             os.replace(APP_LOG, APP_LOG.with_name("autoae.previous.log"))
@@ -435,6 +440,7 @@ def run_app():
         sys.stdout = sys.stderr = log
     import faulthandler
     faulthandler.enable()  # a hard crash still leaves a traceback in the log
+    faulthandler.cancel_dump_traceback_later()  # the launcher's start-up hang tracer; start-up succeeded
     print("Auto AE {} · Python {} · {}".format(
         datetime.now().strftime("%Y-%m-%d %H:%M:%S"), sys.version.split()[0], sys.executable))
     try:
