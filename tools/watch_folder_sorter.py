@@ -140,6 +140,7 @@ def new_rule():
         "counter_step": "1",
         "counter_digits": "4",
         "date_format": "YYMMDD",
+        "date_folder_suffix": "",
         "remove_path_breaking_chars": False,
         "uppercase_original": False,
         "skip_existing_tokens": True,
@@ -168,7 +169,7 @@ def load_rules(path=RULES_FILE):
             for key in (
                 "id", "name", "watch_folder", "destination_folder", "layout", "join",
                 "counter_start", "counter_step", "counter_digits", "date_format",
-                "remove_path_breaking_chars", "uppercase_original",
+                                "date_folder_suffix", "remove_path_breaking_chars", "uppercase_original",
                 "skip_existing_tokens", "convert_audio", "convert_video", "convert_image",
                 "convert_keep_originals",
             )
@@ -221,6 +222,15 @@ def save_rules(rules, path=RULES_FILE, saved_tokens=None):
         except FileNotFoundError:
             pass
         raise
+
+
+def date_folder_name(rule, received_at):
+    date_format = DATE_FORMATS.get(rule.get("date_format"), DATE_FORMATS["YYMMDD"])
+    date_text = received_at.strftime(date_format)
+    suffix = sanitize_path_breaking_chars(str(rule.get("date_folder_suffix", "") or "").strip())
+    if not suffix:
+        return date_text
+    return smart_join([date_text, suffix], JOINERS.get(rule.get("join", "_"), "_"))
 
 
 def _existing_file_count(root):
@@ -291,7 +301,7 @@ def build_output_path(source_path, rule, received_at=None, counter_index=None):
 
     return (
         Path(rule["destination_folder"])
-        / date_text
+        / date_folder_name(rule, received_at)
         / relative.parent
         / f"{stem}{suffix}"
     )
@@ -505,8 +515,7 @@ class IngestEngine:
                 counter_index = None
                 counter_key = None
                 if any(token.get("kind") == "counter" for token in rule.get("layout", [])):
-                    date_format = DATE_FORMATS.get(rule.get("date_format"), DATE_FORMATS["YYMMDD"])
-                    counter_root = Path(rule["destination_folder"]) / received_at.strftime(date_format)
+                    counter_root = Path(rule["destination_folder"]) / date_folder_name(rule, received_at)
                     counter_key = os.path.normcase(str(counter_root.resolve()))
                     if counter_key not in self._counter_counts:
                         self._counter_counts[counter_key] = 0
@@ -565,7 +574,7 @@ class Tool(IngestEngine, BaseTool):
         self._rules_file = RULES_FILE
 
     def create_window(self, parent):
-        window = self.create_tool_window(parent, "Auto Ingest", 1100, 1000)
+        window = self.create_tool_window(parent,         "Auto Ingest", 1280, 1100)
         window.minsize(920, 760)
         self.window = window
 
@@ -599,8 +608,8 @@ class Tool(IngestEngine, BaseTool):
 
         editor_row = ctk.CTkFrame(page, fg_color="transparent")
         editor_row.pack(fill="both", expand=True)
-        editor_row.grid_columnconfigure(0, weight=1, minsize=230)
-        editor_row.grid_columnconfigure(1, weight=3)
+        editor_row.grid_columnconfigure(0, weight=1, minsize=170)
+        editor_row.grid_columnconfigure(1, weight=6)
         editor_row.grid_rowconfigure(0, weight=1)
 
         rules_card = theme.Card(editor_row, title="Watch rules")
@@ -616,10 +625,10 @@ class Tool(IngestEngine, BaseTool):
         rule_buttons = ctk.CTkFrame(rules_body, fg_color="transparent")
         rule_buttons.grid(row=1, column=0, sticky="ew", pady=(8, 0))
         theme.Button(
-            rule_buttons, "New Rule", kind="secondary", width=100, command=self.add_rule,
+            rule_buttons, "New Rule", kind="secondary", width=84, command=self.add_rule,
         ).pack(side="left")
         theme.Button(
-            rule_buttons, "Remove", kind="ghost", width=86, command=self.remove_rule,
+            rule_buttons, "Remove", kind="ghost", width=70, command=self.remove_rule,
         ).pack(side="right")
 
         editor_card = theme.Card(
@@ -628,7 +637,11 @@ class Tool(IngestEngine, BaseTool):
             subtitle="Files are watched recursively; their subfolders are preserved after the date folder.",
         )
         editor_card.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
-        editor = editor_card.body
+        editor_body = editor_card.body
+        editor_body.grid_columnconfigure(0, weight=1)
+        editor_body.grid_rowconfigure(0, weight=1)
+        editor = ctk.CTkScrollableFrame(editor_body, fg_color="transparent", corner_radius=0)
+        editor.grid(row=0, column=0, sticky="nsew")
         editor.grid_columnconfigure(0, weight=1)
 
         theme.muted(editor, "Rule name", role="body").grid(row=0, column=0, sticky="w")
@@ -702,8 +715,14 @@ class Tool(IngestEngine, BaseTool):
             date_row, values=list(DATE_FORMATS), width=140, height=32, command=self.mark_dirty,
         )
         self.date_format_menu.pack(side="left")
+        theme.muted(date_row, "Append", role="body").pack(side="left", padx=(12, 8))
+        self.date_suffix_entry = ctk.CTkEntry(
+            date_row, placeholder_text="Optional text", width=130, height=32,
+        )
+        self.date_suffix_entry.pack(side="left")
+        self.date_suffix_entry.bind("<KeyRelease>", self.mark_dirty)
         theme.muted(
-            date_row, "Destination: [date] / [original subfolders] / renamed file", role="caption",
+            date_row, "Destination: [date + text] / [original subfolders] / renamed file", role="caption",
         ).pack(side="left", padx=(12, 0))
 
         counter_row = ctk.CTkFrame(naming, fg_color="transparent")
@@ -784,8 +803,8 @@ class Tool(IngestEngine, BaseTool):
             role="caption",
         ).grid(row=11, column=0, sticky="w", pady=(2, 0))
 
-        save_row = ctk.CTkFrame(editor, fg_color="transparent")
-        save_row.grid(row=5, column=0, sticky="ew", pady=(10, 0))
+        save_row = ctk.CTkFrame(editor_body, fg_color="transparent")
+        save_row.grid(row=1, column=0, sticky="ew", pady=(10, 0))
         self.rule_status_label = theme.muted(save_row, "Unsaved changes", role="caption")
         self.rule_status_label.pack(side="left")
         theme.Button(
@@ -793,7 +812,7 @@ class Tool(IngestEngine, BaseTool):
         ).pack(side="right")
 
         log_card = theme.Card(page, title="Activity log")
-        log_card.pack(fill="x", pady=(12, 0))
+        log_card.pack(fill="x", pady=(12, 0), side="bottom", before=editor_row)
         self.status_label = theme.StatusLabel(
             log_card.header, text="Status: Not watching", rules=[("Watching", "success")], height=20,
         )
@@ -887,6 +906,8 @@ class Tool(IngestEngine, BaseTool):
             entry.insert(0, value)
         self.join_menu.set(rule.get("join", "_"))
         self.date_format_menu.set(rule.get("date_format", "YYMMDD"))
+        self.date_suffix_entry.delete(0, tk.END)
+        self.date_suffix_entry.insert(0, rule.get("date_folder_suffix", ""))
         self.counter_start_entry.delete(0, tk.END)
         self.counter_start_entry.insert(0, str(rule.get("counter_start", "1")))
         self.counter_step_entry.delete(0, tk.END)
@@ -898,6 +919,7 @@ class Tool(IngestEngine, BaseTool):
         for category, menu in self.convert_menus.items():
             menu.set(rule.get(f"convert_{category}", CONVERT_OFF))
         self.keep_originals_var.set(rule.get("convert_keep_originals", True))
+        self.render_strip()
         self.mark_dirty() if unsaved else self.set_clean()
 
     def add_rule(self):
@@ -966,6 +988,7 @@ class Tool(IngestEngine, BaseTool):
             "counter_step": self.counter_step_entry.get().strip(),
             "counter_digits": self.counter_digits_menu.get(),
             "date_format": self.date_format_menu.get(),
+            "date_folder_suffix": self.date_suffix_entry.get().strip(),
             "remove_path_breaking_chars": self.remove_path_chars_var.get(),
             "uppercase_original": self.uppercase_original_var.get(),
             "skip_existing_tokens": self.skip_existing_tokens_var.get(),
