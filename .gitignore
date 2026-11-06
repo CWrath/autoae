@@ -2,6 +2,8 @@
 autoae_settings.json
 batch_renamer_tokens.json
 setup_kit_settings.json
+installers_settings.json
+installers_library/
 storage_monitor_selected_drives.json
 storage_monitor_window_size.json
 
