@@ -439,6 +439,10 @@ class FileHandler(FileSystemEventHandler):
 class IngestEngine:
     """Watching and moving files, with no window. Auto Ingest's tool and the tray agent both use it."""
 
+    @staticmethod
+    def _is_ignored_file(source):
+        return Path(source).name == ".DS_Store"
+
     def _init_engine(self):
         self._active_files = set()
         self._active_files_lock = threading.Lock()
@@ -462,6 +466,8 @@ class IngestEngine:
 
     def queue_file(self, path, rule):
         source = Path(path)
+        if self._is_ignored_file(source):
+            return
         key = os.path.normcase(str(source.resolve()))
         with self._active_files_lock:
             if key in self._active_files:
@@ -496,6 +502,8 @@ class IngestEngine:
 
     def process_stable_file(self, source, rule, claimed=False, on_processed=None):
         source = Path(source)
+        if self._is_ignored_file(source):
+            return None
         key = os.path.normcase(str(source.resolve()))
         if not claimed:
             with self._active_files_lock:
@@ -1386,7 +1394,10 @@ class Tool(IngestEngine, BaseTool):
             for rule in rules:
                 try:
                     files = sorted(
-                        (path for path in Path(rule["watch_folder"]).rglob("*") if path.is_file()),
+                        (
+                            path for path in Path(rule["watch_folder"]).rglob("*")
+                            if path.is_file() and not self._is_ignored_file(path)
+                        ),
                         key=lambda path: str(path).casefold(),
                     )
                 except OSError as error:

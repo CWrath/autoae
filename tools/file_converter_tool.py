@@ -52,13 +52,13 @@ class Tool(BaseTool):
         theme.muted(main, "Source", role="body", width=110).grid(row=0, column=0, sticky="w")
         self.source_entry = ctk.CTkEntry(main, placeholder_text="A file, or a folder of files", height=34)
         self.source_entry.grid(row=0, column=1, padx=(0, 8), sticky="ew")
-        theme.Button(main, "Fileâ€¦", kind="secondary", width=80, command=self.browse_source_file).grid(row=0, column=2)
-        theme.Button(main, "Folderâ€¦", kind="secondary", width=86, command=self.browse_source_folder).grid(row=0, column=3, padx=(8, 0))
+        theme.Button(main, "File", kind="secondary", width=80, command=self.browse_source_file).grid(row=0, column=2)
+        theme.Button(main, "Folder", kind="secondary", width=86, command=self.browse_source_folder).grid(row=0, column=3, padx=(8, 0))
 
         theme.muted(main, "Output", role="body", width=110).grid(row=1, column=0, sticky="w", pady=(10, 0))
         self.output_entry = ctk.CTkEntry(main, placeholder_text="Optional: defaults to a 'converted' folder next to the source", height=34)
         self.output_entry.grid(row=1, column=1, padx=(0, 8), pady=(10, 0), sticky="ew")
-        theme.Button(main, "Chooseâ€¦", kind="secondary", width=174, command=self.browse_output_folder).grid(
+        theme.Button(main, "Choose", kind="secondary", width=174, command=self.browse_output_folder).grid(
             row=1, column=2, columnspan=2, pady=(10, 0), sticky="ew")
 
         theme.muted(main, "Convert to", role="body", width=110).grid(row=2, column=0, sticky="w", pady=(10, 0))

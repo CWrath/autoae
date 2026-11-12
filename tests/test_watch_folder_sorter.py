@@ -181,6 +181,20 @@ class WatchFolderSorterTests(unittest.TestCase):
             (self.destination / datetime.now().strftime("%y%m%d") / "Camera A" / "004_third.mov").is_file()
         )
 
+    def test_ds_store_is_ignored_by_queue_and_direct_processing(self):
+        source = self.watch / "Camera A" / ".DS_Store"
+        source.write_bytes(b"metadata")
+        tool = Tool()
+        tool.wait_until_stable = mock.Mock()
+
+        with mock.patch("tools.watch_folder_sorter.threading.Thread") as thread:
+            tool.queue_file(source, self.rule)
+
+        thread.assert_not_called()
+        self.assertIsNone(tool.process_stable_file(source, self.rule))
+        tool.wait_until_stable.assert_not_called()
+        self.assertTrue(source.is_file())
+
     def test_image_is_converted_and_original_kept(self):
         from PIL import Image
         source = self.watch / "Camera A" / "still.png"
