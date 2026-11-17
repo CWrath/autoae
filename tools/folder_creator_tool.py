@@ -98,8 +98,11 @@ class Tool(BaseTool):
         ).grid(row=0, column=2, padx=(8, 0))
 
         # --- Folder tree ------------------------------------------------------
-        folders_card = theme.Card(page, title="Folders",
-                                  subtitle="Select a folder to add inside it, rename it or delete it.")
+        folders_card = theme.Card(
+            page, title="Folders",
+            subtitle="Select a folder to add inside it. Click empty space to add at the root. "
+                     "Drag a folder onto another to nest it, or onto empty space to move it to the root.",
+        )
         folders_card.pack(fill="both", expand=True, pady=(14, 0))
         editor = folders_card.body
         editor.grid_columnconfigure(0, weight=1)
@@ -107,6 +110,14 @@ class Tool(BaseTool):
 
         self.tree = ttk.Treeview(editor, show="tree", selectmode="browse")
         self.tree.grid(row=0, column=0, sticky="nsew")
+        accent = C["accent"][theme.mode_index()]
+        self.tree.tag_configure("drop_target", background=accent, foreground="#FFFFFF")
+        self.tree.bind("<ButtonPress-1>", self._drag_press)
+        self.tree.bind("<B1-Motion>", self._drag_motion)
+        self.tree.bind("<ButtonRelease-1>", self._drag_release)
+        self._drag_item = None
+        self._drag_target = None
+        self._drag_active = False
         scrollbar = ttk.Scrollbar(editor, orient="vertical", command=self.tree.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
         self.tree.configure(yscrollcommand=scrollbar.set)
@@ -175,8 +186,71 @@ class Tool(BaseTool):
             )
             parent = existing or self.tree.insert(parent, "end", text=part)
 
+    def _drag_press(self, event):
+        item = self.tree.identify_row(event.y)
+        self._drag_item = item or None
+        self._drag_active = False
+        if not item:
+            self.tree.selection_set(())
+            self.tree.focus("")
+
+    def _drag_motion(self, event):
+        if not self._drag_item:
+            return None
+        self._drag_active = True
+        self.tree.configure(cursor="fleur")
+        target = self.tree.identify_row(event.y) or ""
+        if target == self._drag_item or self._is_descendant(target, self._drag_item):
+            target = None
+        self._set_drop_target(target)
+        return "break"
+
+    def _drag_release(self, _event):
+        item, target, active = self._drag_item, self._drag_target, self._drag_active
+        self._drag_item = None
+        self._drag_active = False
+        self.tree.configure(cursor="")
+        self._set_drop_target(None)
+        if not item or not active or target is None:
+            return
+        if self.tree.parent(item) == target:
+            return
+        name = self.tree.item(item, "text")
+        if any(self.tree.item(sibling, "text") == name for sibling in self.tree.get_children(target)):
+            messagebox.showerror("Duplicate Folder", "That folder already exists there.", parent=self.window)
+            return
+        self.tree.move(item, target, "end")
+        if target:
+            self.tree.item(target, open=True)
+        self.tree.selection_set(item)
+        self.tree.focus(item)
+
+    def _set_drop_target(self, target):
+        if target == self._drag_target:
+            return
+        if self._drag_target:
+            self._tag_item(self._drag_target, False)
+        self._drag_target = target
+        if target:
+            self._tag_item(target, True)
+
+    def _tag_item(self, item, on):
+        tags = [tag for tag in self.tree.item(item, "tags") if tag != "drop_target"]
+        self.tree.item(item, tags=tags + ["drop_target"] if on else tags)
+
+    def _is_descendant(self, item, ancestor):
+        while item:
+            if item == ancestor:
+                return True
+            item = self.tree.parent(item)
+        return False
+
+    def _selected_item(self):
+        selection = self.tree.selection()
+        return selection[0] if selection else ""
+
     def _add_folder(self):
-        parent = self.tree.focus()
+        parent = self._selected_item()
         name = simpledialog.askstring("Add Folder", "Folder name:", parent=self.window)
         if name is None:
             return
@@ -195,7 +269,7 @@ class Tool(BaseTool):
             self.tree.item(parent, open=True)
 
     def _rename_folder(self):
-        item = self.tree.focus()
+        item = self._selected_item()
         if not item:
             messagebox.showinfo("Rename Folder", "Select a folder to rename.")
             return
@@ -219,7 +293,7 @@ class Tool(BaseTool):
         self.tree.item(item, text=name)
 
     def _delete_folder(self):
-        item = self.tree.focus()
+        item = self._selected_item()
         if not item:
             messagebox.showinfo("Delete Folder", "Select a folder to delete.")
             return

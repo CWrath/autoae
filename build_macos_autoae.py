@@ -30,7 +30,7 @@ APP_FILES = [
     "main.py", "theme.py", "base_tool.py", "tool_loader.py", "tool_template.py",
     "app_updater.py", "app_version.py", "ffmpeg_setup.py", "ffmpeg_installer.py",
     "error_help.py", "drag_drop.py", "edl_report_core.py", "music_cue_core.py", "cloud_storage.py", "background_services.py", "tray_agent.py",
-    "taskboard_core.py", "autoae_theme.json", "UI_THEME_GUIDE.md",
+    "taskboard_core.py", "media_metadata.py", "autoae_theme.json", "UI_THEME_GUIDE.md",
 ]
 APP_GLOBS = [
     ("tools", "*.py"), ("assets", "**/*"), ("foldertemplates", "*.csv"),

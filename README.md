@@ -32,6 +32,9 @@ Some media tools use FFmpeg. Windows packages include it; on macOS, use the
 **Install FFmpeg** button in Auto AE when prompted. The optional download needs
 internet access and installs only inside Auto AE's user support folder.
 
+Tools are loaded when first opened, so the first opening of a tool may take a
+little longer than subsequent openings.
+
 ## Build releases
 
 - Windows: run `python build_windows_exe.py` on Windows with PyInstaller and

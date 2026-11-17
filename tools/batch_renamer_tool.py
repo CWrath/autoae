@@ -13,6 +13,7 @@ from tkinterdnd2 import COPY, DND_FILES, TkinterDnD
 import error_help
 import theme
 from base_tool import BaseTool
+from media_metadata import METADATA_TOKENS, metadata_values
 from theme import C
 
 APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -35,6 +36,7 @@ BUILTIN_TOKENS = {
     "date": ("Date", "Today's date (format below)"),
     "folder": ("Folder", "The name of the folder the file is in"),
     "original": ("Original", "The original file name, before any rules"),
+    **METADATA_TOKENS,
 }
 JOINERS = {"_": "_", "-": "-", ".": ".", "Space": " ", "Nothing": ""}
 
@@ -213,6 +215,9 @@ def build_names(files, names, numbers, layout, settings, today=None):
     start, step = _int(settings.get("counter_start"), 1), _int(settings.get("counter_step"), 1)
     counter_digits = settings.get("counter_digits", "4")
     date_text = today.strftime(DATE_FORMATS.get(settings.get("date_format", "YYYYMMDD"), "%Y%m%d"))
+    date_format = DATE_FORMATS.get(settings.get("date_format", "YYYYMMDD"), "%Y%m%d")
+    kinds = [token["kind"] for token in layout]
+    wants_metadata = any(kind in METADATA_TOKENS for kind in kinds)
     built = []
     for i, (path, name) in enumerate(zip(files, names)):
         stem, ext = os.path.splitext(name)
@@ -224,6 +229,11 @@ def build_names(files, names, numbers, layout, settings, today=None):
             "folder": os.path.basename(os.path.dirname(path)),
             "original": os.path.splitext(os.path.basename(path))[0],
         }
+        if wants_metadata:
+            try:
+                values.update(metadata_values(path, date_format, kinds))
+            except OSError:
+                pass
         parts = [token.get("text", "") if token["kind"] == "text" else values.get(token["kind"], "")
                  for token in layout]
         built.append(smart_join(parts, joiner) + ext)
@@ -995,8 +1005,8 @@ class Tool(BaseTool):
     def show_token_settings(self):
         kinds = {token["kind"] for token in self.layout}
         shown = False
-        for frame, kind in ((self.counter_settings, "counter"), (self.date_settings, "date")):
-            if kind in kinds:
+        for frame, wanted in ((self.counter_settings, {"counter"}), (self.date_settings, {"date", "created", "modified"})):
+            if wanted & kinds:
                 frame.pack(side="left", padx=(0, 24))
                 shown = True
             else:

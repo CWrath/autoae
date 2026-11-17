@@ -20,6 +20,7 @@ import background_services
 import error_help
 import theme
 from base_tool import BaseTool
+from media_metadata import METADATA_TOKENS, SOURCE_EXTENSIONS, metadata_values
 from theme import C
 from tools.batch_renamer_tool import (
     DATE_FORMATS, JOINERS, TokenFlow, _int, _pad, chip_label, smart_join,
@@ -38,8 +39,10 @@ TOKEN_LABELS = {
     "folder": "Watch folder",
     "date": "Date received",
     "counter": "Counter",
+    **{kind: label for kind, (label, _hint) in METADATA_TOKENS.items()},
     "text": "Custom text",
 }
+PALETTE_KINDS = ("original", "folder", "date", "counter", *METADATA_TOKENS)
 PATH_BREAKING_CHARS = set(error_help.WINDOWS_BAD_CHARS)
 
 CONVERT_OFF = "Off"
@@ -47,11 +50,6 @@ CONVERT_CHOICES = {
     "audio": [CONVERT_OFF, "wav", "mp3", "flac", "aac", "m4a", "ogg"],
     "video": [CONVERT_OFF, "mp4", "mov", "mkv", "m4v"],
     "image": [CONVERT_OFF, "png", "jpg", "webp", "tif", "bmp"],
-}
-SOURCE_EXTENSIONS = {
-    "audio": {".mp3", ".wav", ".aac", ".flac", ".ogg", ".m4a", ".aif", ".aiff", ".wma", ".opus"},
-    "video": {".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".webm", ".m4v", ".mxf", ".mts", ".m2ts"},
-    "image": {".png", ".jpg", ".jpeg", ".bmp", ".gif", ".webp", ".tif", ".tiff"},
 }
 AUDIO_CODECS = {
     "mp3": "libmp3lame", "wav": "pcm_s16le", "aac": "aac", "flac": "flac", "ogg": "libvorbis", "m4a": "aac",
@@ -271,6 +269,9 @@ def build_output_path(source_path, rule, received_at=None, counter_index=None):
             1,
         ),
     }
+    kinds = [token.get("kind") for token in layout]
+    if any(kind in METADATA_TOKENS for kind in kinds):
+        values.update(metadata_values(source, date_format, kinds))
     original_folded = source.stem.casefold()
     parts = []
     for token in layout:
@@ -1097,7 +1098,7 @@ class Tool(IngestEngine, BaseTool):
     def render_palette(self):
         chips = [
             self.make_token_chip(self.palette, {"kind": kind}, palette=True)
-            for kind in ("original", "folder", "date", "counter")
+            for kind in PALETTE_KINDS
         ]
         chips.extend(
             self.make_token_chip(
@@ -1257,6 +1258,14 @@ class Tool(IngestEngine, BaseTool):
                 if hasattr(self, "counter_digits_menu") else "4",
                 1,
             ),
+            "filetype": "Video",
+            "created": datetime.now().strftime("%y%m%d"),
+            "modified": datetime.now().strftime("%y%m%d"),
+            "resolution": "1920x1080",
+            "framerate": "23.98fps",
+            "codec": "H264",
+            "timecode": "01020304",
+            "audiochannels": "Stereo",
         }
         parts = [
             token.get("text", "") if token.get("kind") == "text"
