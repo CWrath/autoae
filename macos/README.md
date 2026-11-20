@@ -77,6 +77,9 @@ Actions secrets before running it:
 `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, and `APPLE_TEAM_ID`. Attach both platform assets
 before publishing. Keep the `.p12` and its password private; never commit them.
 
+Native build artifacts are retained for 30 days, subject to repository retention limits. If they
+have expired, rerun all jobs or start a new workflow run rather than rerunning only the merge job.
+
 Build all platform assets from the same tagged source revision. The Windows installer bundles
 all Python tools, and the macOS release workflow packages those same tools into the universal app.
 
