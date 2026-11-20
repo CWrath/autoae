@@ -65,7 +65,7 @@ jobs:
           name: macos-app-${{ matrix.architecture }}
           path: ${{ runner.temp }}/native-app/*.tar.gz
           if-no-files-found: error
-          retention-days: 2
+          retention-days: 30
 
   build-ffmpeg:
     strategy:
@@ -99,7 +99,7 @@ jobs:
           name: ffmpeg-build-${{ matrix.architecture }}
           path: ${{ runner.temp }}/AutoAE-ffmpeg-${{ matrix.architecture }}.tar.gz
           if-no-files-found: error
-          retention-days: 2
+          retention-days: 30
 
   merge-and-attach:
     needs: [build-native, build-ffmpeg]
@@ -109,19 +109,29 @@ jobs:
         with:
           ref: ${{ github.sha }}
 
-      - name: Download native app builds
+      - name: Download Intel app build
         uses: actions/download-artifact@v4
         with:
-          pattern: macos-app-*
+          name: macos-app-x86_64
           path: ${{ runner.temp }}/native-apps
-          merge-multiple: true
 
-      - name: Download native FFmpeg builds
+      - name: Download Apple Silicon app build
         uses: actions/download-artifact@v4
         with:
-          pattern: ffmpeg-build-*
+          name: macos-app-arm64
+          path: ${{ runner.temp }}/native-apps
+
+      - name: Download Intel FFmpeg build
+        uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-build-x86_64
           path: ${{ runner.temp }}/ffmpeg-builds
-          merge-multiple: true
+
+      - name: Download Apple Silicon FFmpeg build
+        uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-build-arm64
+          path: ${{ runner.temp }}/ffmpeg-builds
 
       - name: Extract and merge universal app
         env:
